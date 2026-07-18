@@ -71,6 +71,7 @@ export default function Hud({ snapshot, death, onRestart, audio, onToggleMute, o
   const showEatPrompt = snapshot.eatPrompt && !death
   const eatToken = eatPromptToken(snapshot.activeSource)
   const restartToken = restartPromptToken(snapshot.activeSource)
+  const showMarkers = !death
 
   return (
     <>
@@ -119,6 +120,28 @@ export default function Hud({ snapshot, death, onRestart, audio, onToggleMute, o
           </span>
         </div>
       </div>
+
+      {showMarkers ? (
+        <div className="hud-markers" aria-hidden="true">
+          {snapshot.eatMarkers.map((m) => (
+            <span
+              key={m.id}
+              className="eat-marker"
+              style={{ left: `${m.xPct}%`, top: `${m.yPct}%`, opacity: m.opacity }}
+            />
+          ))}
+          {snapshot.edgeMarker ? (
+            <span
+              className="eat-marker-arrow"
+              style={{
+                left: `${snapshot.edgeMarker.xPct}%`,
+                top: `${snapshot.edgeMarker.yPct}%`,
+                transform: `translate(-50%, -50%) rotate(${snapshot.edgeMarker.angle}rad)`,
+              }}
+            />
+          ) : null}
+        </div>
+      ) : null}
 
       {showEatPrompt ? (
         <div

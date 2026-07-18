@@ -18,7 +18,9 @@ import type { ActiveSource, SourceState } from './input/normalize.js'
 import { EventEmitter } from './events.js'
 import type { DeathCause } from './events.js'
 import { Spawner } from './ai/spawner.js'
-import { scanBiteTargets } from './ai/behavior.js'
+import type { AIFish } from './ai/AIFish.js'
+import { scanBiteTargets, canEat } from './ai/behavior.js'
+import { isOnScreen, ndcToScreenPct, edgeMarker, markerFade } from './markers.js'
 import { createPromptHold, updatePromptHold } from './actionPrompt.js'
 import type { PromptHoldState } from './actionPrompt.js'
 import { createRestartGate, updateRestartGate } from './deathRestart.js'
@@ -30,6 +32,34 @@ import type { Vec3 } from './movement.js'
 
 // Owns the Three.js renderer, scene, camera, clock, and the RAF loop.
 // All WebGL/DOM work lives here so the pure modules stay test-friendly.
+
+/** An on-screen marker over a nearby eatable fish. */
+export interface EatMarker {
+  /** Stable id (the fish id) so React can key markers across snapshots. */
+  id: string
+  /** Horizontal position as a percentage of the viewport (0→100). */
+  xPct: number
+  /** Vertical position as a percentage of the viewport (0→100). */
+  yPct: number
+  /** Distance-scaled opacity (closer = more visible). */
+  opacity: number
+}
+
+/** Edge-of-screen arrow pointing toward the nearest off-screen eatable fish. */
+export interface EdgeEatMarker {
+  /** Horizontal position as a percentage of the viewport (0→100). */
+  xPct: number
+  /** Vertical position as a percentage of the viewport (0→100). */
+  yPct: number
+  /** Arrow rotation in radians (0 = pointing right, +clockwise). */
+  angle: number
+}
+
+/** How the eatable-fish markers are tuned. */
+const MARKER_MAX_DIST = 110 // only mark prey within this 3D distance
+const MARKER_NEAR_DIST = 14 // fully opaque at/under this distance
+const MARKER_MIN_OPACITY = 0.28 // faintest a marked (in-range) fish gets
+const MARKER_MAX_ON_SCREEN = 5 // cap on-screen markers to avoid clutter
 
 /** The throttled snapshot the HUD renders (also emitted as the 'hud' event). */
 export interface HudSnapshot {
@@ -46,6 +76,10 @@ export interface HudSnapshot {
   sprinting: boolean
   /** True when a prey-sized fish is within range of the player's bite. */
   eatPrompt: boolean
+  /** On-screen markers over the nearest eatable fish (capped, distance-faded). */
+  eatMarkers: EatMarker[]
+  /** Edge arrow toward the nearest off-screen eatable fish, or null. */
+  edgeMarker: EdgeEatMarker | null
 }
 
 // Neutral input used to freeze the player after death (drifts to a stop).
@@ -110,6 +144,8 @@ export class Game {
   private _trailEmitter: BubbleEmitter
   // Debounced visibility of the contextual "Eat" prompt (see actionPrompt.ts).
   private _eatPrompt: PromptHoldState
+  // Scratch vector reused when projecting fish to screen space for HUD markers.
+  private _markerVec: THREE.Vector3
 
   constructor(container: HTMLElement) {
     if (!container) throw new Error('Game requires a container element')
@@ -159,6 +195,7 @@ export class Game {
     this._prevBite = false
     this._restartGate = null
     this._eatPrompt = createPromptHold()
+    this._markerVec = new THREE.Vector3()
 
     // Wire stats reactions to gameplay events; keep unsubscribers for dispose.
     this._unsubs = [
@@ -327,9 +364,66 @@ export class Game {
     return prey !== null
   }
 
+  /**
+   * Build the HUD prey markers for this frame: on-screen dots over the nearest
+   * eatable fish (capped + distance-faded) plus a single edge arrow toward the
+   * nearest off-screen eatable fish. Projection (WebGL-bound) lives here; the
+   * clamping/fade math is pure in markers.js. Markers are hidden while dead or
+   * paused (intro up). Reuses a scratch Vector3 so per-frame cost stays low.
+   */
+  _computeMarkers(): { eatMarkers: EatMarker[]; edgeMarker: EdgeEatMarker | null } {
+    const eatMarkers: EatMarker[] = []
+    if (!this.alive || this.paused) return { eatMarkers, edgeMarker: null }
+
+    // Camera transform was set this frame in _updateCamera but matrixWorld is
+    // only refreshed at render; update it now so projection is current.
+    this.camera.updateMatrixWorld()
+
+    const player = this.player
+    const pos = player.position
+
+    // Collect eatable fish within range, nearest first. Small N, so a plain
+    // sort is cheaper than a heap and keeps the code obvious.
+    const candidates: Array<{ fish: AIFish; dist: number }> = []
+    for (const fish of this.spawner.fish) {
+      if (!fish.alive) continue
+      if (!canEat(player, fish, this.spawner.aiConfig)) continue
+      const dx = fish.position.x - pos.x
+      const dy = fish.position.y - pos.y
+      const dz = fish.position.z - pos.z
+      const dist = Math.hypot(dx, dy, dz)
+      if (dist > MARKER_MAX_DIST) continue
+      candidates.push({ fish, dist })
+    }
+    candidates.sort((a, b) => a.dist - b.dist)
+
+    const vec = this._markerVec
+    let edge: EdgeEatMarker | null = null
+    for (const { fish, dist } of candidates) {
+      vec.set(fish.position.x, fish.position.y, fish.position.z).project(this.camera)
+      const ndc = { x: vec.x, y: vec.y, z: vec.z }
+      if (isOnScreen(ndc)) {
+        if (eatMarkers.length >= MARKER_MAX_ON_SCREEN) continue
+        const { xPct, yPct } = ndcToScreenPct(ndc.x, ndc.y)
+        eatMarkers.push({
+          id: fish.id,
+          xPct,
+          yPct,
+          opacity: markerFade(dist, MARKER_NEAR_DIST, MARKER_MAX_DIST, MARKER_MIN_OPACITY),
+        })
+      } else if (!edge) {
+        // Nearest off-screen eatable fish becomes the single edge arrow.
+        edge = edgeMarker(ndc.x, ndc.y, ndc.z > 1)
+      }
+    }
+
+    return { eatMarkers, edgeMarker: edge }
+  }
+
   /** Build and emit a HUD snapshot (also invokes onHudUpdate if set). */
   _emitHud(): void {
     const s = this.stats
+    const { eatMarkers, edgeMarker: edge } = this._computeMarkers()
     const snapshot: HudSnapshot = {
       hp: s.hp,
       hpMax: s.hpMax,
@@ -343,6 +437,8 @@ export class Game {
       alive: this.alive,
       sprinting: this.alive && this.player.sprinting && this.player.currentSpeed > 0.5,
       eatPrompt: this._eatPrompt.visible,
+      eatMarkers,
+      edgeMarker: edge,
     }
     if (typeof this.onHudUpdate === 'function') this.onHudUpdate(snapshot)
     this.events.emit('hud', snapshot)
