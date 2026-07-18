@@ -98,6 +98,80 @@ export function approach(current: number, target: number, lambda: number, dt: nu
   return target + (current - target) * Math.exp(-lambda * dt)
 }
 
+// --- Swim animation + steering smoothing helpers --------------------------
+// Pure math used by the fish mesh animation (FishMesh) and the AI/player
+// orientation code to eliminate visible jerkiness. Kept here (no Three.js) so
+// each piece is unit-testable in the node environment.
+
+const TWO_PI = Math.PI * 2
+
+/**
+ * Advance a wrapped phase accumulator by `frequency` (rad/s) * dt, wrapping the
+ * result into [0, 2π).
+ *
+ * Animations must integrate the phase incrementally (phase += freq*dt) rather
+ * than computing sin(elapsedTime * frequency): when the frequency changes, the
+ * latter makes the effective phase jump (elapsedTime is large), which snaps the
+ * animation. Accumulating keeps the phase continuous across frequency changes.
+ */
+export function stepPhase(phase: number, frequency: number, dt: number): number {
+  let p = (phase + frequency * dt) % TWO_PI
+  if (p < 0) p += TWO_PI
+  return p
+}
+
+/**
+ * Blend factor for frame-rate independent exponential damping over dt,
+ * i.e. 1 - exp(-lambda*dt). Use as the `t` in a lerp / quaternion slerp so the
+ * smoothing rate is independent of frame rate.
+ */
+export function dampFactor(lambda: number, dt: number): number {
+  return 1 - Math.exp(-lambda * dt)
+}
+
+/** Normalize a vector, or return null when it is (near) zero-length. */
+function normOrNull(v: Vec3): Vec3 | null {
+  const len = Math.hypot(v.x, v.y, v.z)
+  if (len < 1e-9) return null
+  return { x: v.x / len, y: v.y / len, z: v.z / len }
+}
+
+/**
+ * Rotate the direction `from` toward the direction `to` by at most `maxAngle`
+ * radians — a turn-rate clamp used to keep AI heading changes from snapping.
+ * Inputs are treated as directions (normalized internally); the result is unit
+ * length. If either input is zero-length the other is returned. Pure.
+ */
+export function limitTurn(from: Vec3, to: Vec3, maxAngle: number): Vec3 {
+  const a = normOrNull(from)
+  const b = normOrNull(to)
+  if (!a) return b ?? { ...from }
+  if (!b) return a
+  if (maxAngle <= 0) return a
+
+  let dot = a.x * b.x + a.y * b.y + a.z * b.z
+  dot = dot < -1 ? -1 : dot > 1 ? 1 : dot
+  const angle = Math.acos(dot)
+
+  // Already within the allowed turn (or effectively aligned): snap to target.
+  if (angle <= maxAngle || angle < 1e-6) return b
+
+  const sinAngle = Math.sin(angle)
+  // Near-antipodal (angle ~ π): slerp is ill-conditioned; the direction is
+  // ambiguous anyway, so just accept the target.
+  if (sinAngle < 1e-6) return b
+
+  const t = maxAngle / angle
+  const w1 = Math.sin((1 - t) * angle) / sinAngle
+  const w2 = Math.sin(t * angle) / sinAngle
+  const out = {
+    x: a.x * w1 + b.x * w2,
+    y: a.y * w1 + b.y * w2,
+    z: a.z * w1 + b.z * w2,
+  }
+  return normOrNull(out) ?? a
+}
+
 /**
  * Step a velocity toward a desired velocity. Uses a faster rate while there's
  * input (thrust) and a slower rate when the desired velocity is zero (water

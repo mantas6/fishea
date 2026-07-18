@@ -22,6 +22,7 @@ export interface AiConfig {
   preyRatio: number
   wanderRate: number
   wanderVertical: number
+  turnRate: number
   cruiseSpeed: number
   chaseSpeed: number
   burstSpeed: number
@@ -55,6 +56,7 @@ export const AI_CONFIG: AiConfig = {
   preyRatio: 0.8, // neighbour is prey when size <= mine * this
   wanderRate: 2.2, // how quickly the wander heading jitters
   wanderVertical: 0.35, // damp vertical jitter so fish mostly swim level
+  turnRate: 3.5, // max heading change (rad/s) — caps abrupt steering swings
   cruiseSpeed: 6, // wander cruise speed (units/s)
   chaseSpeed: 9.5, // speed while chasing prey
   burstSpeed: 13, // panic speed while fleeing a threat

@@ -1,7 +1,8 @@
 import * as THREE from 'three'
 import { FishMesh } from '../fish/FishMesh.js'
-import { WORLD, integrate, clampToBounds } from '../movement.js'
+import { WORLD, integrate, clampToBounds, limitTurn } from '../movement.js'
 import type { Vec3 } from '../movement.js'
+import { dampOrientation } from '../orient.js'
 import {
   AI_CONFIG,
   makeRng,
@@ -31,6 +32,10 @@ export interface AIFishOptions {
 // to the world bounds, orients the mesh along the velocity and drives the
 // swim animation. Neighbours are fish descriptors ({ position, size }) and may
 // include the player.
+
+// How quickly the AI mesh turns to visually face its (already turn-limited)
+// heading. Kept generous so the mesh tracks the heading closely.
+const AI_ORIENT_LAMBDA = 10
 
 let _idCounter = 0
 
@@ -107,46 +112,50 @@ export class AIFish implements FishDescriptor {
    */
   update(dt: number, neighbors: FishDescriptor[]): void {
     const self: FishDescriptor = { position: this.position, size: this.size }
-    let dir: Vec3
+    // The direction this fish *wants* to go this frame (may jump when the mode
+    // changes). We steer the heading toward it under a turn-rate cap below.
+    let targetDir: Vec3
     let speed: number
 
     const threat = nearestThreat(self, neighbors, this.config)
     if (threat) {
-      dir = fleeDirection(this.position, threat.position)
+      targetDir = fleeDirection(this.position, threat.position)
       speed = this.config.burstSpeed
       this.mode = 'flee'
-      this.heading = dir
     } else {
       const prey = nearestPrey(self, neighbors, this.config)
       if (prey) {
-        dir = chaseDirection(this.position, prey.position)
+        targetDir = chaseDirection(this.position, prey.position)
         speed = this.config.chaseSpeed
         this.mode = 'chase'
-        this.heading = dir
       } else {
-        this.heading = wanderStep(this.heading, this._rng, dt, this.config)
-        dir = this.heading
+        targetDir = wanderStep(this.heading, this._rng, dt, this.config)
         speed = this.config.cruiseSpeed
         this.mode = 'wander'
       }
     }
 
+    // Cap how fast the heading can swing so abrupt target changes (e.g. a new
+    // threat / mode flip) don't snap the fish around. Both movement and the
+    // mesh orientation follow this smoothed heading, so they stay consistent.
+    this.heading = limitTurn(this.heading, targetDir, this.config.turnRate * dt)
+
+    const dir = this.heading
     this.velocity = { x: dir.x * speed, y: dir.y * speed, z: dir.z * speed }
     this.position = clampToBounds(integrate(this.position, this.velocity, dt), WORLD)
 
-    this._syncTransform(dir)
+    this._syncTransform(dir, false, dt)
     this.fish.update(dt, speed)
   }
 
-  /** Push gameplay state into the Three.js container, orienting along dir. */
-  _syncTransform(dir: Vec3): void {
+  /**
+   * Push gameplay state into the Three.js container, orienting along `dir`.
+   * Orientation is damped; pass instant=true (or dt<=0) to snap (spawn).
+   */
+  _syncTransform(dir: Vec3, instant = true, dt = 0): void {
     this.object3d.position.set(this.position.x, this.position.y, this.position.z)
     const d = vnorm(dir, this.heading)
-    this.object3d.lookAt(
-      this.position.x + d.x,
-      this.position.y + d.y,
-      this.position.z + d.z,
-    )
+    dampOrientation(this.object3d, d, AI_ORIENT_LAMBDA, dt, instant)
   }
 
   dispose(): void {

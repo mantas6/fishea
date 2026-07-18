@@ -1,4 +1,28 @@
 import * as THREE from 'three'
+import { approach, stepPhase } from '../movement.js'
+
+// Swim-animation tuning. Kept as named constants so the motion can be tweaked
+// in one place.
+const SWIM = {
+  // Tail beat frequency (rad/s) scales with speed: base + speed * perSpeed.
+  wagFreqBase: 6,
+  wagFreqPerSpeed: 1.5,
+  // Body-roll and pectoral-fin flutter run at multiples of the tail frequency.
+  rollFreqRatio: 0.5,
+  flutterFreqRatio: 1.3,
+  // Amplitudes.
+  tailAmplitude: 0.6,
+  rollAmplitude: 0.06,
+  flutterAmplitude: 0.25,
+  // Beat intensity grows with speed but is capped.
+  intensityBase: 0.35,
+  intensityPerSpeed: 0.12,
+  intensityMax: 1.2,
+  // How quickly the speed fed to the animation follows the real speed. Damping
+  // this stops per-frame speed jitter (and abrupt AI mode changes) from making
+  // the tail beat stutter in frequency/amplitude.
+  speedLambda: 6,
+}
 
 // Procedural fish built entirely from primitives so it needs no external assets.
 // Returned as a class wrapping a THREE.Group; call update(dt, speed) each frame.
@@ -26,7 +50,13 @@ export class FishMesh {
   tailPivot: THREE.Group
   finLeft: THREE.Mesh
   finRight: THREE.Mesh
-  private _t: number
+  // Per-signal phase accumulators (see stepPhase). Separate accumulators keep
+  // each sine continuous even when wrapped, so no signal snaps on wrap.
+  private _phaseTail: number
+  private _phaseRoll: number
+  private _phaseFin: number
+  // Smoothed speed driving frequency/amplitude.
+  private _speed: number
 
   constructor(options: Partial<FishMeshOptions> = {}) {
     const opts = { ...DEFAULTS, ...options }
@@ -125,25 +155,37 @@ export class FishMesh {
 
     group.scale.setScalar(opts.size)
     this.group = group
-    this._t = 0
+    this._phaseTail = 0
+    this._phaseRoll = 0
+    this._phaseFin = 0
+    this._speed = 0
   }
 
   /**
    * Animate swim motion.
    */
   update(dt: number, speed = 1): void {
-    this._t += dt
-    const intensity = Math.min(1.2, 0.35 + speed * 0.12)
-    const wagFreq = 6 + speed * 1.5
+    // Smooth the speed so amplitude/frequency don't stutter frame-to-frame
+    // (AI mode changes jump the raw speed between cruise/chase/burst).
+    this._speed = approach(this._speed, speed, SWIM.speedLambda, dt)
+    const s = this._speed
+
+    const intensity = Math.min(SWIM.intensityMax, SWIM.intensityBase + s * SWIM.intensityPerSpeed)
+    const wagFreq = SWIM.wagFreqBase + s * SWIM.wagFreqPerSpeed
+
+    // Integrate each phase so a changing frequency never makes the phase jump.
+    this._phaseTail = stepPhase(this._phaseTail, wagFreq, dt)
+    this._phaseRoll = stepPhase(this._phaseRoll, wagFreq * SWIM.rollFreqRatio, dt)
+    this._phaseFin = stepPhase(this._phaseFin, wagFreq * SWIM.flutterFreqRatio, dt)
 
     // Tail wag about Y.
-    this.tailPivot.rotation.y = Math.sin(this._t * wagFreq) * 0.6 * intensity
+    this.tailPivot.rotation.y = Math.sin(this._phaseTail) * SWIM.tailAmplitude * intensity
 
     // Gentle body roll about X (the swim direction), out of phase.
-    this.group.rotation.x = Math.sin(this._t * wagFreq * 0.5) * 0.06 * intensity
+    this.group.rotation.x = Math.sin(this._phaseRoll) * SWIM.rollAmplitude * intensity
 
     // Pectoral fins flutter.
-    const flutter = Math.sin(this._t * wagFreq * 1.3) * 0.25
+    const flutter = Math.sin(this._phaseFin) * SWIM.flutterAmplitude
     this.finLeft.rotation.x = 0.4 + flutter
     this.finRight.rotation.x = -0.4 - flutter
   }

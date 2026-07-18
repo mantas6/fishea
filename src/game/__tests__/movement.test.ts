@@ -14,6 +14,9 @@ import {
   stepVelocity,
   desiredVelocity,
   clampForward,
+  stepPhase,
+  dampFactor,
+  limitTurn,
 } from '../movement.js'
 
 describe('clampPitch', () => {
@@ -180,6 +183,89 @@ describe('desiredVelocity', () => {
   it('pitched-up forward thrust gains a +Y component', () => {
     const v = desiredVelocity({ x: 0, y: 0, z: 1 }, 0, 0.5, 8)
     expect(v.y).toBeGreaterThan(0)
+  })
+})
+
+describe('stepPhase', () => {
+  it('advances by frequency * dt', () => {
+    expect(stepPhase(0, 4, 0.5)).toBeCloseTo(2)
+  })
+
+  it('wraps into [0, 2π)', () => {
+    const p = stepPhase(0, 10, 1) // 10 rad -> 10 - 2π*1 = 3.7168...
+    expect(p).toBeGreaterThanOrEqual(0)
+    expect(p).toBeLessThan(Math.PI * 2)
+    expect(p).toBeCloseTo(10 - Math.PI * 2)
+  })
+
+  it('keeps the phase continuous across a frequency change (no snapping)', () => {
+    // Integrate at a low frequency for a while, then switch to a high one. The
+    // phase must only change by (freq * dt) on the switching step — never jump
+    // by the whole accumulated-time-times-new-frequency amount.
+    const dt = 1 / 60
+    let phase = 0
+    for (let i = 0; i < 120; i++) phase = stepPhase(phase, 6, dt) // 2s at freq 6
+
+    const before = Math.sin(phase)
+    const next = stepPhase(phase, 30, dt) // frequency jumps 6 -> 30
+    const after = Math.sin(next)
+
+    // The sine value can only move by ~ (30 * dt) worth of phase, i.e. small.
+    expect(Math.abs(after - before)).toBeLessThan(0.6)
+    // And the phase delta equals exactly freq*dt (mod 2π), proving continuity.
+    const delta = (next - phase + Math.PI * 2) % (Math.PI * 2)
+    expect(delta).toBeCloseTo(30 * dt)
+  })
+})
+
+describe('dampFactor', () => {
+  it('is 0 at dt 0 (no movement) and approaches 1 for large dt', () => {
+    expect(dampFactor(4, 0)).toBeCloseTo(0)
+    expect(dampFactor(4, 100)).toBeCloseTo(1)
+  })
+
+  it('lies in (0,1) for a normal frame and is frame-rate independent', () => {
+    const f = dampFactor(8, 1 / 60)
+    expect(f).toBeGreaterThan(0)
+    expect(f).toBeLessThan(1)
+    // Two half-steps compose to one full step: (1-f_half)^2 == (1-f_full).
+    const half = dampFactor(8, 1 / 120)
+    expect((1 - half) * (1 - half)).toBeCloseTo(1 - dampFactor(8, 1 / 60))
+  })
+})
+
+describe('limitTurn', () => {
+  const unit = (v: { x: number; y: number; z: number }) => Math.hypot(v.x, v.y, v.z)
+
+  it('snaps to the target when it is within the allowed turn', () => {
+    const from = { x: 1, y: 0, z: 0 }
+    const to = { x: Math.cos(0.05), y: Math.sin(0.05), z: 0 } // 0.05 rad away
+    const out = limitTurn(from, to, 0.2)
+    expect(out.x).toBeCloseTo(to.x)
+    expect(out.y).toBeCloseTo(to.y)
+  })
+
+  it('rotates only by maxAngle when the target is further', () => {
+    const from = { x: 1, y: 0, z: 0 }
+    const to = { x: 0, y: 1, z: 0 } // π/2 away
+    const maxAngle = 0.1
+    const out = limitTurn(from, to, maxAngle)
+    expect(unit(out)).toBeCloseTo(1) // stays unit length
+    const dot = out.x * from.x + out.y * from.y + out.z * from.z
+    expect(Math.acos(Math.max(-1, Math.min(1, dot)))).toBeCloseTo(maxAngle)
+  })
+
+  it('turns toward the target (correct direction)', () => {
+    const from = { x: 1, y: 0, z: 0 }
+    const to = { x: 0, y: 1, z: 0 } // π/2 away, +Y
+    const out = limitTurn(from, to, 0.3)
+    expect(out.y).toBeGreaterThan(0) // moved toward +Y
+    expect(out.x).toBeGreaterThan(0) // but not all the way
+  })
+
+  it('returns the target when the source is zero-length', () => {
+    const out = limitTurn({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }, 0.1)
+    expect(out.z).toBeCloseTo(1)
   })
 })
 

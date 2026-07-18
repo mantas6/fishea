@@ -14,7 +14,12 @@ import {
   stepVelocity,
 } from './movement.js'
 import type { Vec3 } from './movement.js'
+import { dampOrientation } from './orient.js'
 import type { SourceState } from './input/normalize.js'
+
+// How quickly the player mesh turns to face its heading. High = snappy/responsive
+// while still smoothing single-frame direction changes and frame-time spikes.
+const PLAYER_ORIENT_LAMBDA = 12
 
 // The player fish entity: owns gameplay state (position/velocity/heading/size)
 // and a Three.js container object for rendering. Motion is driven by the
@@ -109,19 +114,18 @@ export class Player {
     this.velocity = stepVelocity(this.velocity, desired, motion, dt)
     this.position = clampToBounds(integrate(this.position, this.velocity, dt), WORLD)
 
-    this._syncTransform()
+    this._syncTransform(false, dt)
     this.fish.update(dt, this.currentSpeed)
   }
 
-  /** Push gameplay state into the Three.js container. */
-  _syncTransform(): void {
+  /**
+   * Push gameplay state into the Three.js container. Orientation is damped
+   * toward the heading; pass instant=true (or dt<=0) to snap (spawn / reset).
+   */
+  _syncTransform(instant = true, dt = 0): void {
     this.object3d.position.set(this.position.x, this.position.y, this.position.z)
     const dir = headingToDirection(this.yaw, this.pitch)
-    this.object3d.lookAt(
-      this.position.x + dir.x,
-      this.position.y + dir.y,
-      this.position.z + dir.z,
-    )
+    dampOrientation(this.object3d, dir, PLAYER_ORIENT_LAMBDA, dt, instant)
   }
 
   dispose(): void {
