@@ -13,6 +13,8 @@ import {
   canEat,
   inEatRange,
   resolveEat,
+  scanBiteTargets,
+  BITE_FACING_DOT,
   decideBehavior,
   vlen,
   vdot,
@@ -148,6 +150,57 @@ describe('eatRange / canEat / inEatRange', () => {
     const far = { position: { x: 50, y: 0, z: 0 } }
     expect(inEatRange(eater, close)).toBe(true)
     expect(inEatRange(eater, far)).toBe(false)
+  })
+})
+
+describe('scanBiteTargets', () => {
+  // Player at origin facing +Z (heading matches chaseDirection toward +Z prey).
+  const eater = { position: { x: 0, y: 0, z: 0 }, size: 2, heading: { x: 0, y: 0, z: 1 } }
+
+  it('picks the nearest eat-eligible prey inside the forward cone', () => {
+    const near = { position: { x: 0, y: 0, z: 1 }, size: 1 }
+    const far = { position: { x: 0, y: 0, z: 3 }, size: 1 }
+    const { prey, tooBig } = scanBiteTargets(eater, [far, near], AI_CONFIG)
+    expect(prey).toBe(near)
+    expect(tooBig).toBeNull()
+  })
+
+  it('ignores prey behind the eater (outside the cone)', () => {
+    const behind = { position: { x: 0, y: 0, z: -1 }, size: 1 }
+    expect(scanBiteTargets(eater, [behind], AI_CONFIG).prey).toBeNull()
+  })
+
+  it('ignores prey beyond eat range', () => {
+    const range = eatRange(eater.size, AI_CONFIG)
+    const tooFar = { position: { x: 0, y: 0, z: range + 1 }, size: 1 }
+    expect(scanBiteTargets(eater, [tooFar], AI_CONFIG).prey).toBeNull()
+  })
+
+  it('reports an in-cone but too-big fish as tooBig, not prey', () => {
+    const big = { position: { x: 0, y: 0, z: 1 }, size: 10 }
+    const { prey, tooBig } = scanBiteTargets(eater, [big], AI_CONFIG)
+    expect(prey).toBeNull()
+    expect(tooBig).toBe(big)
+  })
+
+  it('skips dead targets', () => {
+    const dead = { position: { x: 0, y: 0, z: 1 }, size: 1, alive: false }
+    expect(scanBiteTargets(eater, [dead], AI_CONFIG).prey).toBeNull()
+  })
+
+  it('respects the facing-dot threshold at the cone edge', () => {
+    // A target exactly on the cone boundary has heading·toTarget == threshold.
+    const angle = Math.acos(BITE_FACING_DOT)
+    const inside = {
+      position: { x: Math.sin(angle - 0.05), y: 0, z: Math.cos(angle - 0.05) },
+      size: 1,
+    }
+    const outside = {
+      position: { x: Math.sin(angle + 0.05), y: 0, z: Math.cos(angle + 0.05) },
+      size: 1,
+    }
+    expect(scanBiteTargets(eater, [inside], AI_CONFIG).prey).toBe(inside)
+    expect(scanBiteTargets(eater, [outside], AI_CONFIG).prey).toBeNull()
   })
 })
 

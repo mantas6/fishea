@@ -175,3 +175,15 @@ export function controlHintsText(source: ActiveSource): string {
     .map((token) => `${iconsText(token.icons)} ${token.label}`)
     .join(' · ')
 }
+
+/**
+ * The contextual action-prompt token shown when the player is close enough to
+ * eat a prey-sized fish. Uses the same bite icon as the device's hint bar so
+ * the prompt reads as "press this to eat".
+ */
+export function eatPromptToken(source: ActiveSource): HintToken {
+  return {
+    icons: source === 'gamepad' ? ['cross'] : ['mouse-left'],
+    label: 'Eat',
+  }
+}

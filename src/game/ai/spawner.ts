@@ -8,10 +8,7 @@ import {
   canEat,
   inEatRange,
   resolveEat,
-  vsub,
-  vnorm,
-  vdot,
-  vdist,
+  scanBiteTargets,
 } from './behavior.js'
 import type { AiConfig, FishDescriptor, Rng } from './behavior.js'
 import type { FishMesh } from '../fish/FishMesh.js'
@@ -241,27 +238,15 @@ export class Spawner {
   /** Handle a single player bite (rising edge). */
   _playerBite(): void {
     const player = this.player
-    const heading = headingToDirection(player.yaw, player.pitch)
-    let bestPrey: AIFish | null = null
-    let bestTooBig: AIFish | null = null
-    let bestDist = Infinity
-
-    for (const fish of this.fish) {
-      if (!fish.alive) continue
-      const dist = vdist(player.position, fish.position)
-      if (dist > (this.aiConfig.eatRangeBase * player.size)) continue
-      // Must be roughly in front of the player.
-      const toFish = vnorm(vsub(fish.position, player.position))
-      if (vdot(toFish, heading) < 0.3) continue
-      if (canEat(player, fish, this.aiConfig)) {
-        if (dist < bestDist) {
-          bestDist = dist
-          bestPrey = fish
-        }
-      } else {
-        bestTooBig = fish
-      }
-    }
+    const { prey: bestPrey, tooBig: bestTooBig } = scanBiteTargets(
+      {
+        position: player.position,
+        size: player.size,
+        heading: headingToDirection(player.yaw, player.pitch),
+      },
+      this.fish,
+      this.aiConfig,
+    )
 
     if (bestPrey) {
       const { newSize } = resolveEat(player, bestPrey, this.aiConfig)

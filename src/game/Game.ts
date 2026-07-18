@@ -18,6 +18,9 @@ import type { ActiveSource, SourceState } from './input/normalize.js'
 import { EventEmitter } from './events.js'
 import type { DeathCause } from './events.js'
 import { Spawner } from './ai/spawner.js'
+import { scanBiteTargets } from './ai/behavior.js'
+import { createPromptHold, updatePromptHold } from './actionPrompt.js'
+import type { PromptHoldState } from './actionPrompt.js'
 import { createStats, tickStats, eat, damage, sprintAllowed } from './stats.js'
 import type { Stats } from './stats.js'
 import { AudioManager } from './audio/index.js'
@@ -39,6 +42,8 @@ export interface HudSnapshot {
   activeSource: ActiveSource
   alive: boolean
   sprinting: boolean
+  /** True when a prey-sized fish is within range of the player's bite. */
+  eatPrompt: boolean
 }
 
 // Neutral input used to freeze the player after death (drifts to a stop).
@@ -91,6 +96,8 @@ export class Game {
   private _rafId: number | null
   // Reused each frame so the sprint bubble-trail emitter never allocates.
   private _trailEmitter: BubbleEmitter
+  // Debounced visibility of the contextual "Eat" prompt (see actionPrompt.ts).
+  private _eatPrompt: PromptHoldState
 
   constructor(container: HTMLElement) {
     if (!container) throw new Error('Game requires a container element')
@@ -138,6 +145,7 @@ export class Game {
     this._hudInterval = 0.1
     this._activeSource = 'keyboard-mouse'
     this._prevBite = false
+    this._eatPrompt = createPromptHold()
 
     // Wire stats reactions to gameplay events; keep unsubscribers for dispose.
     this._unsubs = [
@@ -250,6 +258,11 @@ export class Game {
     this.spawner.update(dt, { attackPlayer: !this.paused })
     this.world.update(dt)
 
+    // Contextual eat prompt: is a prey-sized fish biteable right now? Held
+    // briefly via hysteresis so quick in/out flips don't flicker the HUD.
+    const eatEligible = this.alive && !this.paused && this._eatTargetInRange()
+    this._eatPrompt = updatePromptHold(this._eatPrompt, eatEligible, dt)
+
     // Water FX: recenter the volumetric fields on the player and puff out a
     // bubble trail from just behind/below the fish while sprinting fast.
     const p = this.player.position
@@ -274,6 +287,24 @@ export class Game {
     this._rafId = requestAnimationFrame(this._loop)
   }
 
+  /**
+   * Whether the player is currently lined up to eat a prey-sized fish. Uses the
+   * exact same range/cone/eligibility scan the actual bite uses (behavior.js),
+   * so the hint can never disagree with what a bite would hit.
+   */
+  _eatTargetInRange(): boolean {
+    const { prey } = scanBiteTargets(
+      {
+        position: this.player.position,
+        size: this.player.size,
+        heading: headingToDirection(this.player.yaw, this.player.pitch),
+      },
+      this.spawner.fish,
+      this.spawner.aiConfig,
+    )
+    return prey !== null
+  }
+
   /** Build and emit a HUD snapshot (also invokes onHudUpdate if set). */
   _emitHud(): void {
     const s = this.stats
@@ -289,6 +320,7 @@ export class Game {
       activeSource: this._activeSource,
       alive: this.alive,
       sprinting: this.alive && this.player.sprinting && this.player.currentSpeed > 0.5,
+      eatPrompt: this._eatPrompt.visible,
     }
     if (typeof this.onHudUpdate === 'function') this.onHudUpdate(snapshot)
     this.events.emit('hud', snapshot)
@@ -327,6 +359,7 @@ export class Game {
     this.spawner.seed()
 
     this._hudTimer = 0
+    this._eatPrompt = createPromptHold()
     this.events.emit('player-respawned')
     this._emitHud()
   }

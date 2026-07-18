@@ -3,6 +3,7 @@ import {
   controlHints,
   controlHintsText,
   controlRows,
+  eatPromptToken,
   iconText,
   iconsText,
   KEYBOARD_CONTROLS,
@@ -53,6 +54,29 @@ describe('controlHintsText (plain-text fallback)', () => {
     expect(text).toContain('L-stick Swim')
     expect(text).toContain('✕ Bite')
     expect(text).not.toContain('W A S D')
+  })
+})
+
+describe('eatPromptToken', () => {
+  it('uses the mouse bite icon on keyboard-mouse', () => {
+    const token = eatPromptToken('keyboard-mouse')
+    expect(token.icons).toEqual(['mouse-left'])
+    expect(token.label).toBe('Eat')
+  })
+
+  it('uses the cross bite icon on gamepad', () => {
+    const token = eatPromptToken('gamepad')
+    expect(token.icons).toEqual(['cross'])
+    expect(token.label).toBe('Eat')
+  })
+
+  it('matches the bite icon used by the hint bar for the device', () => {
+    for (const source of ['keyboard-mouse', 'gamepad'] as const) {
+      const bite = controlHints(source).find((t) => t.label === 'Bite')
+      const eat = eatPromptToken(source)
+      // The eat prompt reuses the same input icon as the "Bite" hint token.
+      expect(bite?.icons).toEqual(expect.arrayContaining(eat.icons))
+    }
   })
 })
 

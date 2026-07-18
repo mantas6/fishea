@@ -6,7 +6,8 @@
 import type { HudSnapshot } from './game/Game.js'
 import type { DeathCause } from './game/events.js'
 import type { AudioState } from './game/audio/index.js'
-import { ControlIcon } from './ui/ControlIcons.jsx'
+import { eatPromptToken } from './game/controlHints.js'
+import { ControlIcon, ControlIconGroup } from './ui/ControlIcons.jsx'
 
 interface BarDef {
   key: keyof HudSnapshot
@@ -67,6 +68,8 @@ export default function Hud({ snapshot, death, onRestart, audio, onToggleMute, o
   const device = snapshot.activeSource === 'gamepad' ? 'Gamepad' : 'Keyboard + mouse'
   const muted = audio?.muted
   const unlocked = audio?.unlocked
+  const showEatPrompt = snapshot.eatPrompt && !death
+  const eatToken = eatPromptToken(snapshot.activeSource)
 
   return (
     <>
@@ -115,6 +118,19 @@ export default function Hud({ snapshot, death, onRestart, audio, onToggleMute, o
           </span>
         </div>
       </div>
+
+      {showEatPrompt ? (
+        <div
+          className="hud-action-prompt"
+          role="status"
+          aria-label={`${eatToken.label} — target in range`}
+        >
+          <span className="action-prompt-chip">
+            <ControlIconGroup ids={eatToken.icons} />
+            <span className="action-prompt-label">{eatToken.label}</span>
+          </span>
+        </div>
+      ) : null}
 
       {death ? (
         <div className="hud-death" role="alertdialog" aria-label="Game over">

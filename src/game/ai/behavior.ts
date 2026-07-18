@@ -260,6 +260,67 @@ export function inEatRange(
 }
 
 /**
+ * Minimum facing alignment (dot of the eater's heading with the direction to a
+ * target) for the player's directional bite. A target must be roughly in the
+ * cone ahead of the fish to be biteable.
+ */
+export const BITE_FACING_DOT = 0.3
+
+/** An eater performing a directional bite: where it is, its size and heading. */
+export interface BiteEater {
+  position: Vec3
+  size: number
+  /** Unit heading the eater is facing (e.g. headingToDirection(yaw, pitch)). */
+  heading: Vec3
+}
+
+/**
+ * The result of scanning for a directional-bite target: the nearest eligible
+ * prey in the bite cone (if any), plus a fallback "too big" fish that was in
+ * range/cone but couldn't be eaten (used to surface a whiff).
+ */
+export interface BiteScan<T extends FishDescriptor> {
+  prey: T | null
+  tooBig: T | null
+}
+
+/**
+ * Find what a directional bite would hit this instant. Pure — shared by the
+ * actual bite resolution (spawner) and the contextual "can I eat?" HUD hint so
+ * they can never disagree about range/eligibility.
+ *
+ * A candidate must be alive, within eat range, and inside the forward bite cone
+ * (heading · toTarget >= BITE_FACING_DOT). Among eat-eligible candidates the
+ * nearest is chosen; otherwise the last in-cone "too big" fish is reported.
+ */
+export function scanBiteTargets<T extends FishDescriptor & { alive?: boolean }>(
+  eater: BiteEater,
+  targets: T[],
+  config: AiConfig = AI_CONFIG,
+): BiteScan<T> {
+  const range = eatRange(eater.size, config)
+  let prey: T | null = null
+  let tooBig: T | null = null
+  let bestDist = Infinity
+  for (const fish of targets) {
+    if (fish.alive === false) continue
+    const dist = vdist(eater.position, fish.position)
+    if (dist > range) continue
+    const toFish = vnorm(vsub(fish.position, eater.position))
+    if (vdot(toFish, eater.heading) < BITE_FACING_DOT) continue
+    if (canEat(eater, fish, config)) {
+      if (dist < bestDist) {
+        bestDist = dist
+        prey = fish
+      }
+    } else {
+      tooBig = fish
+    }
+  }
+  return { prey, tooBig }
+}
+
+/**
  * Resolve an eat event. Pure — computes how much the eater grows (respecting
  * the max-size cap) and its resulting size. The caller applies the growth and
  * removes the target.
