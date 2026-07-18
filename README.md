@@ -48,6 +48,10 @@ A connected controller takes priority automatically whenever it's in use;
 otherwise keyboard + mouse are active. The HUD device indicator follows the
 last-used input.
 
+When idle (no swim input), look input orbits the camera around your fish
+instead of steering it — pan around to admire the view. Start swimming again
+and look resumes steering while the camera glides back behind you.
+
 ### Keyboard & mouse
 
 | Action    | Input                                    |

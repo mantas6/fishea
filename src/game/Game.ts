@@ -2,7 +2,14 @@ import * as THREE from 'three'
 import { createWorld, DEEP_COLOR } from './world.js'
 import type { World } from './world.js'
 import { Player } from './Player.js'
-import { computeCameraTarget, dampVector, CAMERA_DEFAULTS } from './camera.js'
+import {
+  computeCameraTarget,
+  dampVector,
+  CAMERA_DEFAULTS,
+  createOrbitState,
+  updateOrbitState,
+} from './camera.js'
+import type { OrbitState } from './camera.js'
 import { InputManager } from './input/index.js'
 import type { ActiveSource, SourceState } from './input/normalize.js'
 import { EventEmitter } from './events.js'
@@ -75,6 +82,7 @@ export class Game {
   private _unsubs: Array<() => void>
   private _camPos: Vec3
   private _camLook: Vec3
+  private _orbit: OrbitState
   private _running: boolean
   private _rafId: number | null
 
@@ -156,6 +164,10 @@ export class Game {
     this._camPos = { x: this.camera.position.x, y: this.camera.position.y, z: this.camera.position.z }
     this._camLook = { x: 0, y: 20, z: 0 }
 
+    // Idle-orbit camera state: when the player isn't swimming, look input
+    // orbits the camera around the fish instead of steering it.
+    this._orbit = createOrbitState()
+
     this.clock = new THREE.Clock()
     this._running = false
     this._rafId = null
@@ -197,13 +209,23 @@ export class Game {
       this.onDismissPressed()
     }
 
+    // The input actually driving the fish (frozen once dead so it drifts to a stop).
+    const controlInput = this.alive ? input : FROZEN_INPUT
+
+    // Decide follow vs orbit from the movement magnitude, then accumulate look
+    // into the orbit offsets (orbit) or let it steer the fish (follow).
+    const move = controlInput.move
+    const moveMag = Math.hypot(move.x, move.y, move.z)
+    this._orbit = updateOrbitState(this._orbit, moveMag, controlInput.look, dt)
+
+    // While orbiting, the fish keeps its idle drift/bite but look no longer
+    // steers it — zero the look before handing input to the player.
+    const steerInput = this._orbit.orbiting
+      ? { ...controlInput, look: { x: 0, y: 0 } }
+      : controlInput
+
     const sprintOk = sprintAllowed(this.stats)
-    if (this.alive) {
-      this.player.applyInput(input, dt, sprintOk)
-    } else {
-      // Frozen on death: bleed off velocity but ignore steering/thrust.
-      this.player.applyInput(FROZEN_INPUT, dt, false)
-    }
+    this.player.applyInput(steerInput, dt, this.alive && sprintOk)
 
     // Sprinting only counts (and drains stamina) when actually moving fast.
     const sprinting = this.alive && this.player.sprinting && this.player.currentSpeed > 0.5
@@ -276,6 +298,7 @@ export class Game {
       this.player.fish.setSize(this._initialPlayerSize)
     }
     this.player._syncTransform()
+    this._orbit = createOrbitState()
 
     // Rebuild the fish population from scratch.
     this.spawner.dispose()
@@ -292,6 +315,7 @@ export class Game {
       this.player.yaw,
       this.player.pitch,
       CAMERA_DEFAULTS,
+      { yaw: this._orbit.yaw, pitch: this._orbit.pitch },
     )
     this._camPos = dampVector(this._camPos, position, CAMERA_DEFAULTS.lambda, dt)
     this._camLook = dampVector(this._camLook, lookAt, CAMERA_DEFAULTS.lambda, dt)
