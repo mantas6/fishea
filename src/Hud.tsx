@@ -3,6 +3,7 @@
 // screen. The root .hud is pointer-events:none so the canvas stays draggable;
 // only the interactive death panel re-enables pointer events.
 
+import type { CSSProperties } from 'react'
 import type { HudSnapshot } from './game/Game.js'
 import type { DeathCause } from './game/events.js'
 import type { AudioState } from './game/audio/index.js'
@@ -126,8 +127,15 @@ export default function Hud({ snapshot, death, onRestart, audio, onToggleMute, o
           {snapshot.eatMarkers.map((m) => (
             <span
               key={m.id}
-              className="eat-marker"
-              style={{ left: `${m.xPct}%`, top: `${m.yPct}%`, opacity: m.opacity }}
+              className={`eat-marker${m.inRange ? ' is-in-range' : ''}`}
+              style={
+                {
+                  left: `${m.xPct}%`,
+                  top: `${m.yPct}%`,
+                  opacity: m.opacity,
+                  '--closeness': m.closeness,
+                } as CSSProperties
+              }
             />
           ))}
           {snapshot.edgeMarker ? (

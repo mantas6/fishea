@@ -662,17 +662,42 @@ body {
 }
 
 .eat-marker {
+  /* --closeness: 0 (far) → 1 (at eat range), fed per-frame from the snapshot.
+     As the player closes in the ring shrinks toward the fish and its glow
+     brightens; the ::before arc "loads up" proportional to closeness. */
+  --closeness: 0;
   position: absolute;
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  transform: translate(-50%, -50%);
-  border: 2px solid rgba(140, 230, 154, 0.9);
+  transform: translate(-50%, -50%) scale(calc(1 - var(--closeness) * 0.35));
+  border: 2px solid rgba(140, 230, 154, calc(0.5 + var(--closeness) * 0.45));
   box-shadow:
-    0 0 8px rgba(102, 217, 165, 0.5),
+    0 0 calc(6px + var(--closeness) * 10px) rgba(102, 217, 165, calc(0.35 + var(--closeness) * 0.4)),
     inset 0 0 4px rgba(140, 230, 154, 0.4);
   /* Smooth the ~10Hz snapshot updates so markers glide rather than step. */
-  transition: left 0.1s linear, top 0.1s linear, opacity 0.2s ease;
+  transition:
+    left 0.1s linear,
+    top 0.1s linear,
+    opacity 0.2s ease,
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+/* Proximity arc: a ring that fills clockwise as the bite gets closer. */
+.eat-marker::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: conic-gradient(
+    rgba(190, 255, 208, 0.95) calc(var(--closeness) * 360deg),
+    transparent 0
+  );
+  -webkit-mask: radial-gradient(closest-side, transparent 68%, #000 70%);
+  mask: radial-gradient(closest-side, transparent 68%, #000 70%);
+  transition: background 0.2s linear;
 }
 
 .eat-marker::after {
@@ -685,6 +710,39 @@ body {
   border-radius: 50%;
   transform: translate(-50%, -50%);
   background: rgba(200, 255, 214, 0.95);
+}
+
+/* In eat range + facing cone: distinct "bite now!" state — a bright, solid,
+   pulsing ring pulled tight to the fish. */
+.eat-marker.is-in-range {
+  transform: translate(-50%, -50%) scale(0.72);
+  border-color: rgba(210, 255, 222, 1);
+  background: rgba(140, 230, 154, 0.28);
+  animation: eat-marker-bite 0.7s ease-in-out infinite;
+}
+
+.eat-marker.is-in-range::before {
+  background: conic-gradient(rgba(210, 255, 222, 0.95) 360deg, transparent 0);
+}
+
+@keyframes eat-marker-bite {
+  0%,
+  100% {
+    box-shadow:
+      0 0 10px rgba(102, 217, 165, 0.5),
+      inset 0 0 6px rgba(200, 255, 214, 0.5);
+  }
+  50% {
+    box-shadow:
+      0 0 22px rgba(160, 255, 190, 0.9),
+      inset 0 0 10px rgba(200, 255, 214, 0.85);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eat-marker.is-in-range {
+    animation: none;
+  }
 }
 
 .eat-marker-arrow {

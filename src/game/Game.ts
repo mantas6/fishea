@@ -19,8 +19,8 @@ import { EventEmitter } from './events.js'
 import type { DeathCause } from './events.js'
 import { Spawner } from './ai/spawner.js'
 import type { AIFish } from './ai/AIFish.js'
-import { scanBiteTargets, canEat } from './ai/behavior.js'
-import { isOnScreen, ndcToScreenPct, edgeMarker, markerFade } from './markers.js'
+import { scanBiteTargets, canEat, eatRange, vdot, vnorm, vsub, BITE_FACING_DOT } from './ai/behavior.js'
+import { isOnScreen, ndcToScreenPct, edgeMarker, markerFade, biteCloseness } from './markers.js'
 import { createPromptHold, updatePromptHold } from './actionPrompt.js'
 import type { PromptHoldState } from './actionPrompt.js'
 import { createRestartGate, updateRestartGate } from './deathRestart.js'
@@ -43,6 +43,17 @@ export interface EatMarker {
   yPct: number
   /** Distance-scaled opacity (closer = more visible). */
   opacity: number
+  /**
+   * Progress toward the bite, 0 (just entering the cue's engage distance) → 1
+   * (within eat range). Drives the marker's ring fill / shrink / brightness.
+   */
+  closeness: number
+  /**
+   * True when this fish is actually biteable right now — within eat range AND
+   * inside the forward bite cone (same logic as the real bite). Switches the
+   * marker to its distinct "bite now!" appearance.
+   */
+  inRange: boolean
 }
 
 /** Edge-of-screen arrow pointing toward the nearest off-screen eatable fish. */
@@ -381,6 +392,9 @@ export class Game {
 
     const player = this.player
     const pos = player.position
+    // Exact eat range + heading so proximity cues match the real bite.
+    const range = eatRange(player.size, this.spawner.aiConfig)
+    const heading = headingToDirection(player.yaw, player.pitch)
 
     // Collect eatable fish within range, nearest first. Small N, so a plain
     // sort is cheaper than a heap and keeps the code obvious.
@@ -405,11 +419,17 @@ export class Game {
       if (isOnScreen(ndc)) {
         if (eatMarkers.length >= MARKER_MAX_ON_SCREEN) continue
         const { xPct, yPct } = ndcToScreenPct(ndc.x, ndc.y)
+        // "Bite now" state uses the exact eat-range + facing-cone test the real
+        // bite uses (behavior.scanBiteTargets), so the cue can't disagree.
+        const toFish = vnorm(vsub(fish.position, pos))
+        const inRange = dist <= range && vdot(toFish, heading) >= BITE_FACING_DOT
         eatMarkers.push({
           id: fish.id,
           xPct,
           yPct,
           opacity: markerFade(dist, MARKER_NEAR_DIST, MARKER_MAX_DIST, MARKER_MIN_OPACITY),
+          closeness: biteCloseness(dist, range),
+          inRange,
         })
       } else if (!edge) {
         // Nearest off-screen eatable fish becomes the single edge arrow.

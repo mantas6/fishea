@@ -62,6 +62,24 @@ export function markerFade(dist: number, near: number, far: number, min = 0): nu
 }
 
 /**
+ * Normalized "bite closeness" for an eatable fish: how far the player has
+ * closed the gap toward being able to bite it. 0 while still at (or beyond) the
+ * `engage` distance where the cue first appears, ramping linearly to 1 once the
+ * fish is within `range` (the actual eat range). Clamped to [0, 1]. Pure.
+ *
+ * `range` should be the exact `eatRange(size)` value so the fill reaches 1 at
+ * the same distance the real bite lands — the cue never over- or under-promises.
+ * `engage` defaults to a few multiples of the eat range so the marker starts
+ * filling as prey enters comfortable approach distance.
+ */
+export function biteCloseness(dist: number, range: number, engage = range * 4): number {
+  if (engage <= range) return dist <= range ? 1 : 0
+  if (dist <= range) return 1
+  if (dist >= engage) return 0
+  return (engage - dist) / (engage - range)
+}
+
+/**
  * Clamp an off-screen target to the screen edge and compute the arrow angle
  * pointing toward it from the screen centre. Pure.
  *

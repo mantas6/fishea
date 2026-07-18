@@ -4,6 +4,7 @@ import {
   isOnScreen,
   markerFade,
   edgeMarker,
+  biteCloseness,
 } from '../markers.js'
 
 describe('ndcToScreenPct', () => {
@@ -53,6 +54,36 @@ describe('markerFade', () => {
   it('degrades gracefully when far <= near', () => {
     expect(markerFade(5, 10, 10)).toBe(1)
     expect(markerFade(20, 10, 10, 0.3)).toBe(0.3)
+  })
+})
+
+describe('biteCloseness', () => {
+  it('is 0 at or beyond the engage distance', () => {
+    // range 4 => default engage 16.
+    expect(biteCloseness(16, 4)).toBe(0)
+    expect(biteCloseness(30, 4)).toBe(0)
+  })
+
+  it('is 1 at or within the eat range', () => {
+    expect(biteCloseness(4, 4)).toBe(1)
+    expect(biteCloseness(1, 4)).toBe(1)
+  })
+
+  it('ramps linearly from engage down to range', () => {
+    // range 4, engage 16 => halfway distance (10) gives 0.5.
+    expect(biteCloseness(10, 4)).toBeCloseTo(0.5)
+    // Quarter of the way in from engage (13) gives 0.25.
+    expect(biteCloseness(13, 4)).toBeCloseTo(0.25)
+  })
+
+  it('honours an explicit engage distance', () => {
+    // range 2, engage 6 => midpoint 4 gives 0.5.
+    expect(biteCloseness(4, 2, 6)).toBeCloseTo(0.5)
+  })
+
+  it('degrades gracefully when engage <= range', () => {
+    expect(biteCloseness(3, 4, 4)).toBe(1)
+    expect(biteCloseness(5, 4, 4)).toBe(0)
   })
 })
 
