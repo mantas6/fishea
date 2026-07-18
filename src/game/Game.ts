@@ -5,6 +5,7 @@ import { Player } from './Player.js'
 import { computeCameraTarget, dampVector, CAMERA_DEFAULTS } from './camera.js'
 import { InputManager } from './input/index.js'
 import type { ActiveSource, SourceState } from './input/normalize.js'
+import { hasInputActivity } from './input/normalize.js'
 import { EventEmitter } from './events.js'
 import type { DeathCause } from './events.js'
 import { Spawner } from './ai/spawner.js'
@@ -53,7 +54,15 @@ export class Game {
   input: InputManager
   audio: AudioManager
   clock: THREE.Clock
+  /**
+   * When true (e.g. while the intro overlay is up) survival stats stop draining
+   * and AI fish won't bite the player. The scene still renders and animates so
+   * the ocean is alive behind the overlay. Toggled by the UI layer.
+   */
+  paused: boolean
   onHudUpdate?: (snapshot: HudSnapshot) => void
+  /** Fired each frame that any input device shows activity (used to dismiss the intro). */
+  onInputActivity?: (source: ActiveSource) => void
   private _initialPlayerSize: number
   private _hudTimer: number
   private _hudInterval: number
@@ -99,6 +108,7 @@ export class Game {
     // the loop can freeze player control on death without re-deriving it.
     this.stats = createStats()
     this.alive = true
+    this.paused = false
 
     // HUD is refreshed on a throttle (~10Hz) rather than every frame.
     this._hudTimer = 0
@@ -172,6 +182,9 @@ export class Game {
 
     const input = this.input.update(dt)
     this._activeSource = input.activeSource
+    if (this.onInputActivity && hasInputActivity(input)) {
+      this.onInputActivity(input.activeSource)
+    }
 
     const sprintOk = sprintAllowed(this.stats)
     if (this.alive) {
@@ -183,11 +196,15 @@ export class Game {
 
     // Sprinting only counts (and drains stamina) when actually moving fast.
     const sprinting = this.alive && this.player.sprinting && this.player.currentSpeed > 0.5
-    const wasAlive = this.alive
-    this.stats = tickStats(this.stats, dt, { sprinting })
-    if (wasAlive && !this.stats.alive) this._handleDeath('starved')
+    // While paused (intro up) survival stats freeze so the player isn't punished.
+    if (!this.paused) {
+      const wasAlive = this.alive
+      this.stats = tickStats(this.stats, dt, { sprinting })
+      if (wasAlive && !this.stats.alive) this._handleDeath('starved')
+    }
 
-    this.spawner.update(dt)
+    // Fish keep swimming behind the intro, but they won't attack while paused.
+    this.spawner.update(dt, { attackPlayer: !this.paused })
     this.world.update(dt)
     this._updateCamera(dt)
 

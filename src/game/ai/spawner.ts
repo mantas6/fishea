@@ -164,7 +164,8 @@ export class Spawner {
    * Advance the whole population one frame: spawn timing, per-fish AI update,
    * despawn of far-away fish, and all eating resolution.
    */
-  update(dt: number): void {
+  update(dt: number, opts: { attackPlayer?: boolean } = {}): void {
+    const attackPlayer = opts.attackPlayer !== false
     // --- Spawn over time when population drops.
     this._timer += dt
     if (this._timer >= this.config.spawnInterval) {
@@ -191,11 +192,11 @@ export class Spawner {
       }
     }
 
-    this._resolveEating()
+    this._resolveEating(attackPlayer)
   }
 
   /** Resolve every eat interaction for the frame. */
-  _resolveEating(): void {
+  _resolveEating(attackPlayer = true): void {
     const player = this.player
     const ai = this.fish
 
@@ -221,11 +222,13 @@ export class Spawner {
     }
 
     // --- AI vs player: a threat that reaches the player bites it.
-    for (const eater of ai) {
-      if (!eater.alive) continue
-      if (canEat(eater, player, this.aiConfig) && inEatRange(eater, player, this.aiConfig)) {
-        const damage = Math.round(eater.size * 5)
-        this.events.emit('player-bitten', { attackerId: eater.id, damage })
+    if (attackPlayer) {
+      for (const eater of ai) {
+        if (!eater.alive) continue
+        if (canEat(eater, player, this.aiConfig) && inEatRange(eater, player, this.aiConfig)) {
+          const damage = Math.round(eater.size * 5)
+          this.events.emit('player-bitten', { attackerId: eater.id, damage })
+        }
       }
     }
 

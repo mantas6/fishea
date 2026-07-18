@@ -57,9 +57,10 @@ interface HudProps {
   onRestart: () => void
   audio: AudioState
   onToggleMute: () => void
+  onToggleHelp: () => void
 }
 
-export default function Hud({ snapshot, death, onRestart, audio, onToggleMute }: HudProps) {
+export default function Hud({ snapshot, death, onRestart, audio, onToggleMute, onToggleHelp }: HudProps) {
   if (!snapshot) return null
 
   const device = snapshot.activeSource === 'gamepad' ? 'Gamepad' : 'Keyboard + mouse'
@@ -69,6 +70,15 @@ export default function Hud({ snapshot, death, onRestart, audio, onToggleMute }:
   return (
     <>
       <div className="hud-audio">
+        <button
+          type="button"
+          className="hud-help"
+          onClick={onToggleHelp}
+          title="Controls (H)"
+          aria-label="Show controls"
+        >
+          ?
+        </button>
         <button
           type="button"
           className="hud-mute"

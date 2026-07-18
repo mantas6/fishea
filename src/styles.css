@@ -280,3 +280,246 @@ body {
     opacity: 1;
   }
 }
+
+.hud-help {
+  pointer-events: auto;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(120, 200, 255, 0.25);
+  font-size: 15px;
+  font-weight: 700;
+  color: rgba(232, 241, 255, 0.9);
+  background: rgba(4, 16, 34, 0.55);
+  backdrop-filter: blur(6px);
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.hud-help:hover {
+  border-color: rgba(120, 200, 255, 0.5);
+  color: #9be1ff;
+}
+
+.hud-help:focus-visible {
+  outline: 2px solid #9be1ff;
+  outline-offset: 3px;
+}
+
+/* --- Controls panel (shared: intro + help) ------------------------------ */
+
+.controls-panel {
+  text-align: left;
+}
+
+.controls-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.controls-tab {
+  flex: 1;
+  cursor: pointer;
+  border: 1px solid rgba(120, 200, 255, 0.2);
+  border-radius: 9px;
+  padding: 8px 10px;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  color: rgba(200, 226, 255, 0.7);
+  background: rgba(4, 16, 34, 0.4);
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.controls-tab:hover {
+  border-color: rgba(120, 200, 255, 0.45);
+  color: #cfeaff;
+}
+
+.controls-tab.is-active {
+  color: #04122b;
+  background: linear-gradient(90deg, #4fd1ff, #63e6be);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.controls-tab:focus-visible {
+  outline: 2px solid #9be1ff;
+  outline-offset: 2px;
+}
+
+.controls-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.controls-row {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.controls-action {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(200, 226, 255, 0.6);
+}
+
+.controls-input {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(232, 241, 255, 0.95);
+}
+
+/* --- Intro overlay ------------------------------------------------------ */
+
+.intro {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 10, 24, 0.62);
+  backdrop-filter: blur(4px);
+  pointer-events: auto;
+}
+
+.intro-card {
+  width: min(420px, 90vw);
+  text-align: center;
+  padding: 30px 34px 26px;
+  border-radius: 16px;
+  background: rgba(4, 16, 34, 0.85);
+  border: 1px solid rgba(120, 200, 255, 0.2);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.intro-title {
+  margin: 0 0 4px;
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #9be1ff;
+}
+
+.intro-pitch {
+  margin: 0 0 22px;
+  font-size: 14px;
+  color: rgba(200, 226, 255, 0.8);
+}
+
+.intro-start {
+  pointer-events: auto;
+  cursor: pointer;
+  margin-top: 22px;
+  border: none;
+  border-radius: 10px;
+  padding: 11px 22px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #04122b;
+  background: linear-gradient(90deg, #4fd1ff, #63e6be);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  animation: hud-hint-pulse 2.4s ease-in-out infinite;
+}
+
+.intro-start:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(79, 209, 255, 0.4);
+}
+
+.intro-start:focus-visible {
+  outline: 2px solid #9be1ff;
+  outline-offset: 3px;
+}
+
+/* --- Help overlay ------------------------------------------------------- */
+
+.help-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 10, 24, 0.55);
+  backdrop-filter: blur(3px);
+  pointer-events: auto;
+}
+
+.help-card {
+  width: min(420px, 90vw);
+  padding: 26px 30px 22px;
+  border-radius: 16px;
+  background: rgba(4, 16, 34, 0.9);
+  border: 1px solid rgba(120, 200, 255, 0.2);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.help-title {
+  margin: 0 0 16px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #9be1ff;
+  text-align: center;
+}
+
+.help-close {
+  pointer-events: auto;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  margin-top: 20px;
+  border: 1px solid rgba(120, 200, 255, 0.25);
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(232, 241, 255, 0.9);
+  background: rgba(4, 16, 34, 0.55);
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.help-close:hover {
+  border-color: rgba(120, 200, 255, 0.5);
+  color: #9be1ff;
+}
+
+.help-close:focus-visible {
+  outline: 2px solid #9be1ff;
+  outline-offset: 3px;
+}
+
+/* --- In-game hint bar (bottom) ------------------------------------------ */
+
+.hint-bar {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 92vw;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(220, 236, 255, 0.9);
+  background: rgba(4, 16, 34, 0.55);
+  border: 1px solid rgba(120, 200, 255, 0.18);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
+  opacity: 0.85;
+  transition: opacity 0.6s ease;
+}
+
+.hint-bar.is-hidden {
+  opacity: 0;
+}

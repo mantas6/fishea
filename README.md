@@ -32,6 +32,16 @@ it with the **Sound: on/off** button (top-right) or the **M** key.
 
 ## Controls
 
+An intro screen greets you on first load with the pitch and a controls
+reference (Keyboard/Mouse and PS4 tabs — the tab for your active device is
+highlighted). Press any key, click/tap, press a gamepad button, or hit the
+✕ button to dismiss it and start; survival stats stay frozen until you do.
+
+During play a compact hint bar at the bottom shows the controls for the active
+device and quietly fades after ~20s (it reappears when you switch devices or
+open help). Press **H** or the **?** button (top-right) to reopen the full
+controls overlay at any time.
+
 A connected controller takes priority automatically whenever it's in use;
 otherwise keyboard + mouse are active. The HUD device indicator follows the
 last-used input.
@@ -47,6 +57,7 @@ last-used input.
 | Sprint    | `Shift` (hold)                           |
 | Bite/eat  | Left mouse button                        |
 | Mute      | `M`                                      |
+| Help      | `H`                                      |
 
 ### PS4 / DualShock controller
 
