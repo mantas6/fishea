@@ -94,6 +94,25 @@ export function heartbeatBpm(hpFraction: number, slow = 60, fast = 110): number 
   return slow + (fast - slow) * t
 }
 
+/**
+ * Decide whether a "hurt" SFX should be suppressed because a fatal bite just
+ * fired the death sting. A fatal bite emits 'player-died' (synchronously, just
+ * before the audio manager's own 'player-bitten' handler runs), so when the
+ * hurt trigger arrives within `windowMs` of the last death we skip it to avoid
+ * two loud stingers stacking on the same frame. Pure: takes explicit
+ * timestamps in milliseconds.
+ */
+export function shouldSuppressHurt(
+  nowMs: number,
+  lastDeathMs: number | null,
+  windowMs = 100,
+): boolean {
+  if (lastDeathMs == null) return false
+  if (!Number.isFinite(nowMs) || !Number.isFinite(lastDeathMs)) return false
+  const dt = nowMs - lastDeathMs
+  return dt >= 0 && dt <= windowMs
+}
+
 export default {
   MINOR_PENTATONIC,
   semitoneToFreq,
@@ -101,4 +120,5 @@ export default {
   pickNextNote,
   heartbeatActive,
   heartbeatBpm,
+  shouldSuppressHurt,
 }

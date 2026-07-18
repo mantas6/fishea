@@ -8,7 +8,7 @@ import { AudioEngine } from './engine.js'
 import { createSfx, createHeartbeat } from './sfx.js'
 import type { Heartbeat, SfxKit } from './sfx.js'
 import { Music } from './music.js'
-import { heartbeatActive, heartbeatBpm } from './theory.js'
+import { heartbeatActive, heartbeatBpm, shouldSuppressHurt } from './theory.js'
 import type { EventEmitter, Unsubscribe } from '../events.js'
 import type { HudSnapshot } from '../Game.js'
 
@@ -38,6 +38,9 @@ export class AudioManager {
   private _heartbeatActive: boolean
   private _unsubs: Unsubscribe[]
   private _muted: boolean
+  private _lastDeathAt: number | null
+  /** Wall-clock source (ms); injectable/overridable for tests. */
+  private _now: () => number
 
   constructor(options: AudioManagerOptions = {}) {
     this.engine = options.engine ?? new AudioEngine()
@@ -50,6 +53,8 @@ export class AudioManager {
 
     this._unsubs = []
     this._muted = !!options.muted
+    this._lastDeathAt = null
+    this._now = () => Date.now()
 
     // Callback fired whenever the enabled/unlocked state changes so a HUD can
     // reflect it. Set by the host (App).
@@ -91,16 +96,25 @@ export class AudioManager {
 
     this._unsubs.push(
       ev.on('player-ate', () => this.sfx.eat()),
-      ev.on('player-bitten', () => this.sfx.hurt()),
+      ev.on('player-bitten', () => {
+        // A fatal bite emits 'player-died' (and thus the death cue) just before
+        // this handler runs; skip the loud hurt sting so they don't stack.
+        if (shouldSuppressHurt(this._now(), this._lastDeathAt)) return
+        this.sfx.hurt()
+      }),
       ev.on('fish-eaten', () => this.sfx.bite()),
       ev.on('bite-missed', () => this.sfx.miss()),
       ev.on('player-died', () => {
+        this._lastDeathAt = this._now()
         this.sfx.death()
-        this._setHeartbeat(false)
+        this._setHeartbeat(false) // no thumping on the death screen
+        this.music.duck() // give the gentle death cue some quiet space
       }),
       ev.on('player-respawned', () => {
         this._hpFraction = 1
+        this._lastDeathAt = null
         this._setHeartbeat(false)
+        this.music.unduck()
       }),
       ev.on('hud', (snap) => {
         if (!snap) return

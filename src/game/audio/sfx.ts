@@ -51,6 +51,16 @@ interface ToneOptions {
   attack?: number
 }
 
+interface SoftToneOptions {
+  start: number
+  freq: number
+  type?: OscillatorType
+  peak?: number
+  attack?: number
+  release?: number
+  cutoff?: number
+}
+
 // --- Low-level building blocks --------------------------------------------
 
 /** Build (and cache) a mono white-noise buffer of `seconds` length. */
@@ -137,6 +147,44 @@ export function createSfx(engine: AudioEngine): SfxKit {
     osc.stop(start + duration + 0.05)
   }
 
+  /**
+   * Play a soft, mellow tone: a single sine/triangle through a gentle lowpass
+   * with a slow attack and a long, smooth release. The gain envelope starts and
+   * ends at exactly zero (via linear ramps at the edges) so there are no clicks.
+   */
+  function softTone({
+    start,
+    freq,
+    type = 'sine',
+    peak = 0.16,
+    attack = 0.08,
+    release = 1.2,
+    cutoff = 1200,
+  }: SoftToneOptions): void {
+    const ctx = engine.ctx!
+    const osc = ctx.createOscillator()
+    osc.type = type
+    osc.frequency.setValueAtTime(freq, start)
+
+    const filter = ctx.createBiquadFilter()
+    filter.type = 'lowpass'
+    filter.frequency.setValueAtTime(cutoff, start)
+    filter.Q.value = 0.5
+
+    const g = ctx.createGain()
+    const end = start + attack + release
+    g.gain.setValueAtTime(0, start) // begin at true zero
+    g.gain.linearRampToValueAtTime(Math.max(0.0001, peak), start + attack) // slow soft attack
+    g.gain.exponentialRampToValueAtTime(0.0008, end - 0.06) // long, soft decay
+    g.gain.linearRampToValueAtTime(0, end) // settle to exact zero (no click)
+
+    osc.connect(filter)
+    filter.connect(g)
+    g.connect(engine.sfxGain!)
+    osc.start(start)
+    osc.stop(end + 0.03)
+  }
+
   return {
     /** Bite/chomp: short filtered noise burst layered with a low thump. */
     bite() {
@@ -170,22 +218,26 @@ export function createSfx(engine: AudioEngine): SfxKit {
       noiseBurst({ start: t, duration: 0.12, peak: 0.2, type: 'highpass', freq: 900, q: 0.6 })
     },
 
-    /** Death sting: short descending minor phrase (root, b3, root-octave-down). */
+    /**
+     * Death: a gentle, melancholic farewell rather than a harsh sting. Three
+     * slow descending notes spelling a soft C-minor fall (G4 -> Eb4 -> Bb3) on
+     * mellow sines through a lowpass, each with a slow attack and long release
+     * and played well below the other SFX (it lands on a quiet moment). Notes
+     * overlap slightly so the phrase breathes instead of stabbing.
+     */
     death() {
       if (!ready()) return
       const t = engine.now()
-      const notes = [440, 523.25, 349.23, 220]
-      notes.forEach((f, i) => {
-        tone({
-          start: t + i * 0.14,
-          type: 'triangle',
-          freqStart: f,
-          freqEnd: f,
-          duration: 0.28,
-          peak: 0.4,
-          attack: 0.01,
-        })
-      })
+      const notes: Array<{ freq: number; at: number }> = [
+        { freq: 392.0, at: 0.0 }, // G4
+        { freq: 311.13, at: 0.5 }, // Eb4
+        { freq: 233.08, at: 1.05 }, // Bb3
+      ]
+      for (const n of notes) {
+        softTone({ start: t + n.at, freq: n.freq, peak: 0.16, attack: 0.08, release: 1.3, cutoff: 1100 })
+      }
+      // A faint low sine underneath for warmth, very quiet and slow.
+      softTone({ start: t, freq: 116.54, type: 'sine', peak: 0.08, attack: 0.12, release: 2.2, cutoff: 500 })
     },
 
     /** Sprint start: subtle rising bubbly swish. */

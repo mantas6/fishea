@@ -151,6 +151,39 @@ export class Music {
     this._noteTimer = setTimeout(() => this._scheduleNote(), 3000)
   }
 
+  /**
+   * Briefly duck the whole music bus (used on player death so the gentle death
+   * cue sits in a quieter space), then ease it back up. Ramps are click-free
+   * and clamp to the engine's configured music volume. No-op without a context.
+   */
+  duck(depth = 0.4, hold = 1.6, release = 1.4): void {
+    const ctx = this.engine.ctx
+    const bus = this.engine.musicGain
+    if (!ctx || !bus) return
+    const base = this.engine.musicVolume
+    const t = ctx.currentTime
+    const low = Math.max(0.0001, base * depth)
+    const g = bus.gain
+    g.cancelScheduledValues(t)
+    g.setValueAtTime(g.value, t)
+    g.linearRampToValueAtTime(low, t + 0.35) // ease down
+    g.setValueAtTime(low, t + hold) // hold under the cue
+    g.linearRampToValueAtTime(base, t + hold + release) // ease back up
+  }
+
+  /** Cancel any active duck and restore the music bus to full volume. */
+  unduck(release = 0.5): void {
+    const ctx = this.engine.ctx
+    const bus = this.engine.musicGain
+    if (!ctx || !bus) return
+    const base = this.engine.musicVolume
+    const t = ctx.currentTime
+    const g = bus.gain
+    g.cancelScheduledValues(t)
+    g.setValueAtTime(g.value, t)
+    g.linearRampToValueAtTime(base, t + release)
+  }
+
   /** Stop everything and tear down the pad graph. */
   stop(): void {
     if (!this._running) return

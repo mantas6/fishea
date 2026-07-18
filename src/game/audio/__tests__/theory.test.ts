@@ -6,6 +6,7 @@ import {
   pickNextNote,
   heartbeatActive,
   heartbeatBpm,
+  shouldSuppressHurt,
 } from '../theory.js'
 
 describe('semitoneToFreq', () => {
@@ -132,5 +133,36 @@ describe('heartbeatBpm', () => {
 
   it('interpolates in between', () => {
     expect(heartbeatBpm(0.15, 60, 110)).toBeCloseTo(85)
+  })
+})
+
+describe('shouldSuppressHurt (fatal-bite window)', () => {
+  it('does not suppress when no death has occurred', () => {
+    expect(shouldSuppressHurt(1000, null)).toBe(false)
+  })
+
+  it('suppresses when the hurt lands within the window after death', () => {
+    expect(shouldSuppressHurt(1000, 1000)).toBe(true) // same instant
+    expect(shouldSuppressHurt(1050, 1000)).toBe(true) // 50ms later
+    expect(shouldSuppressHurt(1100, 1000)).toBe(true) // exactly at edge
+  })
+
+  it('does not suppress once the window has elapsed', () => {
+    expect(shouldSuppressHurt(1101, 1000)).toBe(false)
+    expect(shouldSuppressHurt(2000, 1000)).toBe(false)
+  })
+
+  it('does not suppress a hurt that predates the death (negative dt)', () => {
+    expect(shouldSuppressHurt(900, 1000)).toBe(false)
+  })
+
+  it('respects a custom window', () => {
+    expect(shouldSuppressHurt(1300, 1000, 250)).toBe(false) // dt 300 > 250
+    expect(shouldSuppressHurt(1200, 1000, 300)).toBe(true) // dt 200 <= 300
+  })
+
+  it('ignores non-finite timestamps', () => {
+    expect(shouldSuppressHurt(NaN, 1000)).toBe(false)
+    expect(shouldSuppressHurt(1000, Infinity)).toBe(false)
   })
 })
