@@ -82,6 +82,13 @@ describe('controlRows', () => {
     expect(controlRows('gamepad')).toBe(GAMEPAD_CONTROLS)
   })
 
+  it('lists L1 / R2 / L3 as gamepad sprint inputs', () => {
+    const sprint = GAMEPAD_CONTROLS.find((r) => r.action === 'Sprint')
+    expect(sprint?.icons).toEqual(['l1', 'r2', 'l3'])
+    expect(sprint?.input).toBe('L1 / R2 / L3')
+    expect(iconText('l3')).toBe('L3')
+  })
+
   it('every row has an action, icons and text input', () => {
     for (const row of [...KEYBOARD_CONTROLS, ...GAMEPAD_CONTROLS]) {
       expect(row.action.length).toBeGreaterThan(0)

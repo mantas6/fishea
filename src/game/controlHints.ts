@@ -29,6 +29,8 @@ export type ControlIconId =
   // Analog sticks
   | 'lstick'
   | 'rstick'
+  // Analog stick presses
+  | 'l3'
   // D-pad (whole pad or a single highlighted direction)
   | 'dpad'
   | 'dpad-up'
@@ -78,6 +80,8 @@ export function iconText(id: ControlIconId): string {
       return 'L-stick'
     case 'rstick':
       return 'R-stick'
+    case 'l3':
+      return 'L3'
     case 'dpad':
       return 'D-pad'
     case 'dpad-up':
@@ -125,7 +129,7 @@ export const GAMEPAD_CONTROLS: ControlRow[] = [
   { action: 'Look', icons: ['rstick'], input: 'Right stick' },
   { action: 'Swim up', icons: ['r1', 'dpad-up'], input: 'R1 / D-pad up' },
   { action: 'Swim down', icons: ['l2', 'dpad-down'], input: 'L2 / D-pad down' },
-  { action: 'Sprint', icons: ['l1', 'r2'], input: 'L1 / R2' },
+  { action: 'Sprint', icons: ['l1', 'r2', 'l3'], input: 'L1 / R2 / L3' },
   { action: 'Bite / eat', icons: ['cross', 'square'], input: '✕ Cross / ▢ Square' },
 ]
 

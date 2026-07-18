@@ -96,7 +96,10 @@ export class GamepadInput {
     return {
       move: stickToMove(left, { up, down }),
       look: stickToLook(right, dt, this.lookSpeed),
-      sprint: this._pressed(buttons, B.SPRINT) || this._pressed(buttons, B.SPRINT_ALT),
+      sprint:
+        this._pressed(buttons, B.SPRINT) ||
+        this._pressed(buttons, B.SPRINT_ALT) ||
+        this._pressed(buttons, B.SPRINT_ALT2),
       bite: this._pressed(buttons, B.BITE) || this._pressed(buttons, B.BITE_ALT),
     }
   }

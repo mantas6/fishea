@@ -69,7 +69,7 @@ last-used input.
 | Look      | Right stick                              |
 | Swim up   | `R1` (or D-pad up)                       |
 | Swim down | `L2` (or D-pad down)                     |
-| Sprint    | `L1` (or `R2`)                           |
+| Sprint    | `L1` (or `R2` / `L3`)                    |
 | Bite/eat  | `✕` Cross (or `▢` Square)                |
 
 ## Development

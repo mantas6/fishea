@@ -61,6 +61,7 @@ export const GAMEPAD_BUTTONS: Record<string, number> = {
   UP: 5, // R1 — swim up
   DOWN: 6, // L2 — swim down
   SPRINT_ALT: 7, // R2
+  SPRINT_ALT2: 10, // L3 (left stick press)
   DPAD_UP: 12, // D-pad up — swim up (alt)
   DPAD_DOWN: 13, // D-pad down — swim down (alt)
 }

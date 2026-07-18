@@ -145,6 +145,37 @@ function Stick({ id }: { id: 'lstick' | 'rstick' }) {
   )
 }
 
+// Analog stick press (L3) -----------------------------------------------------
+
+function StickPress({ id }: { id: 'l3' }) {
+  const label = iconText(id) // 'L3'
+  const highlight = 'rgba(120,200,255,0.85)'
+  return (
+    <Svg viewBox="0 0 24 24" ariaLabel={label}>
+      {/* base ring */}
+      <circle cx={12} cy={12} r={10.5} fill={PANEL} stroke={EDGE} strokeWidth={1} />
+      {/* press chevrons pointing into the nub (down = "push in") */}
+      <g stroke={highlight} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" fill="none">
+        <path d="M9 3.6 l3 2.6 l3 -2.6" />
+      </g>
+      {/* pressed nub (filled to read as depressed) */}
+      <circle cx={12} cy={13} r={5.6} fill={highlight} opacity={0.85} stroke={EDGE} strokeWidth={1.2} />
+      <text
+        x={12}
+        y={13}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize={7}
+        fontWeight={700}
+        fontFamily="system-ui, sans-serif"
+        fill={LABEL}
+      >
+        {label}
+      </text>
+    </Svg>
+  )
+}
+
 // D-pad -----------------------------------------------------------------------
 
 type DpadDir = 'up' | 'down' | 'left' | 'right' | null
@@ -241,6 +272,8 @@ export function ControlIcon({ id }: { id: ControlIconId }) {
     case 'lstick':
     case 'rstick':
       return <Stick id={id} />
+    case 'l3':
+      return <StickPress id={id} />
     case 'dpad':
       return <Dpad dir={null} />
     case 'dpad-up':
