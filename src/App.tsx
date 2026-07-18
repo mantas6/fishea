@@ -86,6 +86,22 @@ export default function App() {
     setDeath(null)
   }, [])
 
+  // Gamepad ✕/Cross can't be caught by window key/pointer listeners, so use
+  // Game's death-screen restart hook (edge-detected + grace-gated) to restart
+  // from a controller. Keyboard (Enter) restart is handled below.
+  useEffect(() => {
+    const game = gameRef.current
+    if (!game) return undefined
+    if (!death) {
+      game.onRestartPressed = undefined
+      return undefined
+    }
+    game.onRestartPressed = () => handleRestart()
+    return () => {
+      if (gameRef.current) gameRef.current.onRestartPressed = undefined
+    }
+  }, [death, handleRestart])
+
   const handleToggleMute = useCallback(() => {
     const game = gameRef.current
     if (!game) return

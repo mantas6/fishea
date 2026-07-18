@@ -6,8 +6,8 @@
 import type { HudSnapshot } from './game/Game.js'
 import type { DeathCause } from './game/events.js'
 import type { AudioState } from './game/audio/index.js'
-import { eatPromptToken } from './game/controlHints.js'
-import { ControlIcon, ControlIconGroup } from './ui/ControlIcons.jsx'
+import { eatPromptToken, restartPromptToken, iconsText } from './game/controlHints.js'
+import { ControlIconGroup } from './ui/ControlIcons.jsx'
 
 interface BarDef {
   key: keyof HudSnapshot
@@ -70,6 +70,7 @@ export default function Hud({ snapshot, death, onRestart, audio, onToggleMute, o
   const unlocked = audio?.unlocked
   const showEatPrompt = snapshot.eatPrompt && !death
   const eatToken = eatPromptToken(snapshot.activeSource)
+  const restartToken = restartPromptToken(snapshot.activeSource)
 
   return (
     <>
@@ -140,9 +141,9 @@ export default function Hud({ snapshot, death, onRestart, audio, onToggleMute, o
             <button type="button" className="death-restart" onClick={onRestart} autoFocus>
               Swim again
             </button>
-            <p className="death-hint" aria-label="Press Enter to restart">
+            <p className="death-hint" aria-label={`Press ${iconsText(restartToken.icons)} to restart`}>
               <span className="cta-line">
-                Press <ControlIcon id="key:Enter" /> to restart
+                Press <ControlIconGroup ids={restartToken.icons} /> to restart
               </span>
             </p>
           </div>

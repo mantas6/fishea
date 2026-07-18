@@ -187,3 +187,15 @@ export function eatPromptToken(source: ActiveSource): HintToken {
     label: 'Eat',
   }
 }
+
+/**
+ * The prompt token shown on the death screen for restarting a run. On a gamepad
+ * it's the ✕/Cross button (matching the bite/dismiss button); on keyboard it's
+ * Enter (the key the death screen already listens for).
+ */
+export function restartPromptToken(source: ActiveSource): HintToken {
+  return {
+    icons: source === 'gamepad' ? ['cross'] : ['key:Enter'],
+    label: 'Restart',
+  }
+}

@@ -4,6 +4,7 @@ import {
   controlHintsText,
   controlRows,
   eatPromptToken,
+  restartPromptToken,
   iconText,
   iconsText,
   KEYBOARD_CONTROLS,
@@ -77,6 +78,26 @@ describe('eatPromptToken', () => {
       // The eat prompt reuses the same input icon as the "Bite" hint token.
       expect(bite?.icons).toEqual(expect.arrayContaining(eat.icons))
     }
+  })
+})
+
+describe('restartPromptToken', () => {
+  it('uses Enter on keyboard-mouse', () => {
+    const token = restartPromptToken('keyboard-mouse')
+    expect(token.icons).toEqual(['key:Enter'])
+    expect(token.label).toBe('Restart')
+  })
+
+  it('uses the cross button on gamepad', () => {
+    const token = restartPromptToken('gamepad')
+    expect(token.icons).toEqual(['cross'])
+    expect(token.label).toBe('Restart')
+  })
+
+  it('reuses the gamepad bite icon so ✕ restarts the run', () => {
+    const bite = controlHints('gamepad').find((t) => t.label === 'Bite')
+    const restart = restartPromptToken('gamepad')
+    expect(bite?.icons).toEqual(expect.arrayContaining(restart.icons))
   })
 })
 

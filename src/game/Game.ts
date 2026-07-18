@@ -21,6 +21,8 @@ import { Spawner } from './ai/spawner.js'
 import { scanBiteTargets } from './ai/behavior.js'
 import { createPromptHold, updatePromptHold } from './actionPrompt.js'
 import type { PromptHoldState } from './actionPrompt.js'
+import { createRestartGate, updateRestartGate } from './deathRestart.js'
+import type { RestartGate } from './deathRestart.js'
 import { createStats, tickStats, eat, damage, sprintAllowed } from './stats.js'
 import type { Stats } from './stats.js'
 import { AudioManager } from './audio/index.js'
@@ -83,7 +85,17 @@ export class Game {
    * dismissal is handled by the UI layer's own DOM listeners.
    */
   onDismissPressed?: () => void
+  /**
+   * Fired on the gamepad ✕/Cross rising edge while the death screen is up (after
+   * a short grace period), so a controller can restart the run without touching
+   * the keyboard/mouse. The UI layer wires this to the same restart path as the
+   * on-screen button. Keyboard (Enter) restart is handled by the UI layer.
+   */
+  onRestartPressed?: () => void
   private _prevBite: boolean
+  // Grace + edge-detection gate for the death-screen controller restart. Null
+  // while alive; created on death and cleared on restart.
+  private _restartGate: RestartGate | null
   private _initialPlayerSize: number
   private _hudTimer: number
   private _hudInterval: number
@@ -145,6 +157,7 @@ export class Game {
     this._hudInterval = 0.1
     this._activeSource = 'keyboard-mouse'
     this._prevBite = false
+    this._restartGate = null
     this._eatPrompt = createPromptHold()
 
     // Wire stats reactions to gameplay events; keep unsubscribers for dispose.
@@ -225,6 +238,15 @@ export class Game {
     this._prevBite = input.bite
     if (this.onDismissPressed && bitePressed && input.activeSource === 'gamepad') {
       this.onDismissPressed()
+    }
+
+    // While dead, the gamepad ✕/Cross restarts the run. Gated so a button held
+    // through death can't instantly restart (edge detection + a short grace).
+    if (!this.alive && this._restartGate) {
+      const restartPressed = input.activeSource === 'gamepad' && input.bite
+      const gate = updateRestartGate(this._restartGate, restartPressed, dt)
+      this._restartGate = gate.state
+      if (gate.triggered && this.onRestartPressed) this.onRestartPressed()
     }
 
     // The input actually driving the fish (frozen once dead so it drifts to a stop).
@@ -330,6 +352,9 @@ export class Game {
   _handleDeath(cause: DeathCause): void {
     if (!this.alive) return
     this.alive = false
+    // Arm the controller restart gate, latching the current bite state so a
+    // button held at the moment of death must be released before it can fire.
+    this._restartGate = createRestartGate(this._prevBite)
     this.events.emit('player-died', { cause })
     this._emitHud()
   }
@@ -341,6 +366,7 @@ export class Game {
   restart(): void {
     this.stats = createStats()
     this.alive = true
+    this._restartGate = null
 
     // Reset player gameplay + visual state.
     this.player.position = { x: 0, y: 20, z: 0 }
