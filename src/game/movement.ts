@@ -46,6 +46,10 @@ export const PLAYER_MOTION: PlayerMotion = {
   dragLambda: 1.6, // how quickly velocity bleeds off when there's no input
 }
 
+// When the player pushes "backward" (a brake) forward speed bleeds off faster
+// than passive drag by this factor.
+export const BRAKE_DRAG_MULTIPLIER = 2.5
+
 /**
  * Clamp a pitch angle (radians) to the allowed range.
  */
@@ -112,6 +116,25 @@ export function stepVelocity(
     y: approach(velocity.y, desired.y, lambda, dt),
     z: approach(velocity.z, desired.z, lambda, dt),
   }
+}
+
+/** Result of clamping the forward axis: the safe move plus a brake flag. */
+export interface ClampedForward {
+  move: Vec3
+  braking: boolean
+}
+
+/**
+ * Fish can't swim in reverse. Clamp the forward axis so backward input
+ * (move.z < 0) never produces reverse thrust; instead it flags a brake so the
+ * caller can bleed off existing forward speed faster than passive drag.
+ * Strafe (x) and vertical (y) are left untouched.
+ */
+export function clampForward(move: Vec3): ClampedForward {
+  if (move.z < 0) {
+    return { move: { x: move.x, y: move.y, z: 0 }, braking: true }
+  }
+  return { move, braking: false }
 }
 
 /**

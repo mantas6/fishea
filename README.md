@@ -38,26 +38,26 @@ last-used input.
 
 ### Keyboard & mouse
 
-| Action    | Input                              |
-| --------- | ---------------------------------- |
-| Swim      | `W` `A` `S` `D` / arrow keys       |
-| Look      | Mouse (click the canvas to lock)   |
-| Swim up   | `Space`                            |
-| Swim down | `Ctrl` or `C`                      |
-| Sprint    | `Shift` (hold)                     |
-| Bite/eat  | Left mouse button                  |
-| Mute      | `M`                                |
+| Action    | Input                                    |
+| --------- | ---------------------------------------- |
+| Swim      | `W` `A` `D` (`S` brakes — no reverse)    |
+| Look      | Mouse (click to lock) or arrow keys      |
+| Swim up   | `Space`                                  |
+| Swim down | `Ctrl` or `C`                            |
+| Sprint    | `Shift` (hold)                           |
+| Bite/eat  | Left mouse button                        |
+| Mute      | `M`                                      |
 
 ### PS4 / DualShock controller
 
-| Action    | Input                              |
-| --------- | ---------------------------------- |
-| Swim      | Left stick                         |
-| Look      | Right stick                        |
-| Swim up   | `R1` (or D-pad up)                 |
-| Swim down | `L2` (or D-pad down)               |
-| Sprint    | `L1` (or `R2`)                     |
-| Bite/eat  | `✕` Cross (or `▢` Square)          |
+| Action    | Input                                    |
+| --------- | ---------------------------------------- |
+| Swim      | Left stick (stick down brakes — no reverse) |
+| Look      | Right stick                              |
+| Swim up   | `R1` (or D-pad up)                       |
+| Swim down | `L2` (or D-pad down)                     |
+| Sprint    | `L1` (or `R2`)                           |
+| Bite/eat  | `✕` Cross (or `▢` Square)                |
 
 ## Development
 

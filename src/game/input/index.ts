@@ -13,7 +13,7 @@
 import { KeyboardInput } from './keyboard.js'
 import { MouseInput } from './mouse.js'
 import { GamepadInput } from './gamepad.js'
-import { keysToMove, mergeInputSources, neutralState } from './normalize.js'
+import { keysToLook, keysToMove, mergeInputSources, neutralState } from './normalize.js'
 import type { ActiveSource, NormalizedInputState, SourceState } from './normalize.js'
 
 export interface InputManagerOptions {
@@ -47,7 +47,7 @@ export class InputManager {
    */
   update(dt: number): NormalizedInputState {
     const gamepad = this.gamepad.getState(dt)
-    const keyboardMouse = this._readKeyboardMouse()
+    const keyboardMouse = this._readKeyboardMouse(dt)
 
     const merged = mergeInputSources(gamepad, keyboardMouse, this.lastActive)
     this.lastActive = merged.activeSource
@@ -55,11 +55,14 @@ export class InputManager {
     return merged
   }
 
-  _readKeyboardMouse(): SourceState {
+  _readKeyboardMouse(dt: number): SourceState {
     const keys = this.keyboard.getState()
+    // Arrow-key look adds to mouse look so either (or both) can steer.
+    const mouseLook = this.mouse.consumeLook()
+    const keyLook = keysToLook(keys, dt)
     return {
       move: keysToMove(keys),
-      look: this.mouse.consumeLook(),
+      look: { x: mouseLook.x + keyLook.x, y: mouseLook.y + keyLook.y },
       sprint: keys.sprint,
       bite: this.mouse.isBiting(),
     }

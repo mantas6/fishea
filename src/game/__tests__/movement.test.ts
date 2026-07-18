@@ -13,6 +13,7 @@ import {
   approach,
   stepVelocity,
   desiredVelocity,
+  clampForward,
 } from '../movement.js'
 
 describe('clampPitch', () => {
@@ -179,5 +180,43 @@ describe('desiredVelocity', () => {
   it('pitched-up forward thrust gains a +Y component', () => {
     const v = desiredVelocity({ x: 0, y: 0, z: 1 }, 0, 0.5, 8)
     expect(v.y).toBeGreaterThan(0)
+  })
+})
+
+describe('clampForward (no reverse)', () => {
+  it('leaves forward input (z > 0) unchanged and does not brake', () => {
+    const out = clampForward({ x: 0.3, y: -0.2, z: 1 })
+    expect(out.move).toEqual({ x: 0.3, y: -0.2, z: 1 })
+    expect(out.braking).toBe(false)
+  })
+
+  it('zeroes reverse input (z < 0) and flags braking, keeping strafe/vertical', () => {
+    const out = clampForward({ x: 0.5, y: 0.4, z: -1 })
+    expect(out.move.z).toBe(0)
+    expect(out.move.x).toBe(0.5)
+    expect(out.move.y).toBe(0.4)
+    expect(out.braking).toBe(true)
+  })
+
+  it('produces zero reverse desired velocity for backward input', () => {
+    const { move } = clampForward({ x: 0, y: 0, z: -1 })
+    const v = desiredVelocity(move, 0, 0, 8)
+    // heading is -Z at yaw 0; reverse thrust would give +Z. It must be zero.
+    expect(v.z).toBeCloseTo(0)
+    expect(v.x).toBeCloseTo(0)
+    expect(v.y).toBeCloseTo(0)
+  })
+
+  it('lets existing forward speed decay toward zero under a brake (no reversal)', () => {
+    // Start moving forward (-Z) then hold backward: desired forward is zero,
+    // so velocity approaches zero without ever crossing into reverse (+Z).
+    const { move } = clampForward({ x: 0, y: 0, z: -1 })
+    const desired = desiredVelocity(move, 0, 0, 8)
+    let vel = { x: 0, y: 0, z: -8 }
+    for (let i = 0; i < 5; i++) {
+      vel = stepVelocity(vel, desired, PLAYER_MOTION, 0.1)
+    }
+    expect(vel.z).toBeGreaterThan(-8) // decayed toward zero
+    expect(vel.z).toBeLessThanOrEqual(0) // never reversed past zero into +Z
   })
 })

@@ -3,11 +3,13 @@ import { FishMesh } from './fish/FishMesh.js'
 import {
   WORLD,
   PLAYER_MOTION,
+  BRAKE_DRAG_MULTIPLIER,
   headingToDirection,
   integrate,
   clampToBounds,
   clampPitch,
   wrapAngle,
+  clampForward,
   desiredVelocity,
   stepVelocity,
 } from './movement.js'
@@ -94,10 +96,17 @@ export class Player {
     this.bite = !!input.bite
 
     const maxSpeed = this.speed * (this.sprinting ? this.sprintMultiplier : 1)
-    const desired = desiredVelocity(input.move, this.yaw, this.pitch, maxSpeed)
+
+    // No swimming backwards: reverse input becomes a brake, not reverse thrust.
+    const { move, braking } = clampForward(input.move)
+    const desired = desiredVelocity(move, this.yaw, this.pitch, maxSpeed)
 
     // Ramp toward the desired velocity (thrust) / bleed off when idle (drag).
-    this.velocity = stepVelocity(this.velocity, desired, PLAYER_MOTION, dt)
+    // Braking bleeds forward speed off faster than passive drag.
+    const motion = braking
+      ? { ...PLAYER_MOTION, dragLambda: PLAYER_MOTION.dragLambda * BRAKE_DRAG_MULTIPLIER }
+      : PLAYER_MOTION
+    this.velocity = stepVelocity(this.velocity, desired, motion, dt)
     this.position = clampToBounds(integrate(this.position, this.velocity, dt), WORLD)
 
     this._syncTransform()

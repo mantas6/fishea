@@ -36,6 +36,11 @@ export interface KeyState {
   up: boolean
   down: boolean
   sprint: boolean
+  // Arrow keys drive the camera (an alternative to mouse look).
+  lookLeft: boolean
+  lookRight: boolean
+  lookUp: boolean
+  lookDown: boolean
 }
 
 // Default analog stick / trigger deadzone.
@@ -43,6 +48,10 @@ export const DEADZONE = 0.15
 
 // How fast the gamepad right stick turns the view (radians/second at full tilt).
 export const GAMEPAD_LOOK_SPEED = 2.6
+
+// How fast the arrow keys turn the view (radians/second while held).
+export const KEYBOARD_LOOK_YAW_SPEED = 2.0
+export const KEYBOARD_LOOK_PITCH_SPEED = 1.2
 
 // Standard-mapping PS4 (DualShock) button indices we care about.
 export const GAMEPAD_BUTTONS: Record<string, number> = {
@@ -132,6 +141,24 @@ export function stickToLook(rightStick: Vec2, dt: number, speed = GAMEPAD_LOOK_S
     x: -rightStick.x * speed * dt,
     y: -rightStick.y * speed * dt,
   }
+}
+
+/**
+ * Convert held arrow keys into per-frame look deltas (radians), matching the
+ * right-stick sign convention (yaw 0 faces -Z):
+ *   Left  -> turn left  (yaw increases, +x)   Right -> turn right (-x)
+ *   Up    -> look up     (pitch increases, +y)  Down  -> look down  (-y)
+ * Scaled by dt so the turn rate is frame-rate independent.
+ */
+export function keysToLook(
+  keys: Partial<KeyState> = {},
+  dt: number,
+  yawSpeed = KEYBOARD_LOOK_YAW_SPEED,
+  pitchSpeed = KEYBOARD_LOOK_PITCH_SPEED,
+): Vec2 {
+  const x = ((keys.lookLeft ? 1 : 0) - (keys.lookRight ? 1 : 0)) * yawSpeed * dt
+  const y = ((keys.lookUp ? 1 : 0) - (keys.lookDown ? 1 : 0)) * pitchSpeed * dt
+  return { x, y }
 }
 
 /**

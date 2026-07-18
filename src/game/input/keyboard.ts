@@ -49,13 +49,18 @@ export class KeyboardInput {
    */
   getState(): KeyState {
     return {
-      forward: this._has('KeyW', 'ArrowUp'),
-      back: this._has('KeyS', 'ArrowDown'),
-      left: this._has('KeyA', 'ArrowLeft'),
-      right: this._has('KeyD', 'ArrowRight'),
+      // WASD drives the fish; arrows drive the camera (see look* below).
+      forward: this._has('KeyW'),
+      back: this._has('KeyS'),
+      left: this._has('KeyA'),
+      right: this._has('KeyD'),
       up: this._has('Space'),
       down: this._has('ControlLeft', 'ControlRight', 'KeyC'),
       sprint: this._has('ShiftLeft', 'ShiftRight'),
+      lookLeft: this._has('ArrowLeft'),
+      lookRight: this._has('ArrowRight'),
+      lookUp: this._has('ArrowUp'),
+      lookDown: this._has('ArrowDown'),
     }
   }
 

@@ -5,6 +5,7 @@ import {
   applyDeadzone,
   applyStickDeadzone,
   keysToMove,
+  keysToLook,
   stickToMove,
   stickToLook,
   hasInputActivity,
@@ -74,6 +75,36 @@ describe('keysToMove', () => {
   it('normalizes diagonal horizontal movement to unit length', () => {
     const out = keysToMove({ forward: true, right: true })
     expect(Math.hypot(out.x, out.z)).toBeCloseTo(1)
+  })
+})
+
+describe('keysToLook', () => {
+  it('is zero with no arrow keys', () => {
+    expect(keysToLook({}, 0.1)).toEqual({ x: 0, y: 0 })
+  })
+
+  it('Left turns left (+x yaw delta), Right turns right (-x)', () => {
+    expect(keysToLook({ lookLeft: true }, 0.1).x).toBeGreaterThan(0)
+    expect(keysToLook({ lookRight: true }, 0.1).x).toBeLessThan(0)
+  })
+
+  it('Up looks up (+y pitch delta), Down looks down (-y)', () => {
+    expect(keysToLook({ lookUp: true }, 0.1).y).toBeGreaterThan(0)
+    expect(keysToLook({ lookDown: true }, 0.1).y).toBeLessThan(0)
+  })
+
+  it('opposing keys cancel out', () => {
+    expect(keysToLook({ lookLeft: true, lookRight: true }, 0.1).x).toBe(0)
+    expect(keysToLook({ lookUp: true, lookDown: true }, 0.1).y).toBe(0)
+  })
+
+  it('scales with dt and the given speeds', () => {
+    expect(keysToLook({ lookLeft: true }, 1, 2, 1).x).toBeCloseTo(2)
+    expect(keysToLook({ lookUp: true }, 0.5, 2, 1.2).y).toBeCloseTo(0.6)
+  })
+
+  it('arrow keys do not contribute to movement', () => {
+    expect(keysToMove({ lookLeft: true, lookUp: true } as never)).toEqual({ x: 0, y: 0, z: 0 })
   })
 })
 
