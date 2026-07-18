@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   seafloorHeight,
+  SEAFLOOR_RELIEF,
   randomAnnulusPoint,
   clampRadius,
   clusteredScatter,
@@ -22,18 +23,33 @@ function makeRng(seed: number): () => number {
 }
 
 describe('seafloorHeight', () => {
-  it('is the base seafloor level at the origin', () => {
-    expect(seafloorHeight(0, 0)).toBeCloseTo(WORLD.seafloorY)
-  })
-
-  it('stays within the dune amplitude everywhere', () => {
-    for (let x = -180; x <= 180; x += 37) {
-      for (let z = -180; z <= 180; z += 41) {
+  it('stays within the relief envelope everywhere', () => {
+    for (let x = -180; x <= 180; x += 7) {
+      for (let z = -180; z <= 180; z += 7) {
         const h = seafloorHeight(x, z)
-        expect(h).toBeGreaterThanOrEqual(WORLD.seafloorY - 2.2 - 1e-6)
-        expect(h).toBeLessThanOrEqual(WORLD.seafloorY + 2.2 + 1e-6)
+        expect(h).toBeGreaterThanOrEqual(WORLD.seafloorY - SEAFLOOR_RELIEF - 1e-6)
+        expect(h).toBeLessThanOrEqual(WORLD.seafloorY + SEAFLOOR_RELIEF + 1e-6)
       }
     }
+  })
+
+  it('has real rolling relief (not a flat plane)', () => {
+    let min = Infinity
+    let max = -Infinity
+    for (let x = -180; x <= 180; x += 5) {
+      for (let z = -180; z <= 180; z += 5) {
+        const h = seafloorHeight(x, z)
+        if (h < min) min = h
+        if (h > max) max = h
+      }
+    }
+    // The floor must swing across a big chunk of its envelope — proof that it
+    // reads as hills and valleys rather than the near-flat original dunes.
+    expect(max - min).toBeGreaterThan(SEAFLOOR_RELIEF)
+  })
+
+  it('never rises near the water surface', () => {
+    expect(WORLD.seafloorY + SEAFLOOR_RELIEF).toBeLessThan(WORLD.surfaceY - WORLD.fishSurfaceMargin)
   })
 
   it('is deterministic', () => {

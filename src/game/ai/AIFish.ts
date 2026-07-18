@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { FishMesh } from '../fish/FishMesh.js'
 import { WORLD, integrate, clampToBounds, limitTurn } from '../movement.js'
 import type { Vec3 } from '../movement.js'
+import { seafloorHeight } from '../world.js'
 import { dampOrientation } from '../orient.js'
 import {
   AI_CONFIG,
@@ -142,7 +143,8 @@ export class AIFish implements FishDescriptor {
 
     const dir = this.heading
     this.velocity = { x: dir.x * speed, y: dir.y * speed, z: dir.z * speed }
-    this.position = clampToBounds(integrate(this.position, this.velocity, dt), WORLD)
+    // Terrain-following floor so the fish never clips through the hills.
+    this.position = clampToBounds(integrate(this.position, this.velocity, dt), WORLD, seafloorHeight)
 
     this._syncTransform(dir, false, dt)
     this.fish.update(dt, speed)

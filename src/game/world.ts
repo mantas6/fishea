@@ -74,9 +74,10 @@ export function createWorld(scene: THREE.Scene): World {
   const hemi = new THREE.HemisphereLight(0x2f7fb0, 0x0a2033, 0.6)
   root.add(hemi)
 
-  // --- Seafloor: large plane with vertex-noise displacement.
+  // --- Seafloor: large plane with vertex-noise displacement. Enough segments
+  // (2 units/segment) to resolve the rolling hills smoothly without silhouettes.
   const floorSize = 400
-  const floorSegs = 128
+  const floorSegs = 200
   const floorGeo = new THREE.PlaneGeometry(floorSize, floorSize, floorSegs, floorSegs)
   floorGeo.rotateX(-Math.PI / 2) // lay flat
   const pos = floorGeo.attributes.position
@@ -333,13 +334,30 @@ export interface Point2 {
 }
 
 /**
- * Height of the smooth dune surface at (x, z). Shared by the floor mesh and
- * every decoration so props sit ON the undulating sand rather than a flat
- * plane. Deliberately excludes the per-vertex "grain" so it stays continuous.
- * Pure.
+ * Peak vertical relief of the seafloor (max |height - seafloorY|), i.e. the
+ * sum of every octave's amplitude in {@link seafloorHeight}. Sized well under
+ * the water depth (surfaceY - seafloorY = 40) so hills never poke through the
+ * surface or crowd the swimmable volume. Exercised by the world tests.
+ */
+export const SEAFLOOR_RELIEF = 8.5
+
+/**
+ * Height of the seafloor at (x, z). Layered low-frequency octaves give real
+ * rolling hills and valleys, with the original mid dunes and a fine ripple on
+ * top. Shared by the floor mesh and every decoration so props sit ON the
+ * terrain rather than a flat plane. Deliberately excludes the per-vertex
+ * "grain" so it stays continuous, and its total amplitude equals
+ * {@link SEAFLOOR_RELIEF}. Pure & deterministic.
  */
 export function seafloorHeight(x: number, z: number): number {
-  return WORLD.seafloorY + Math.sin(x * 0.03) * Math.cos(z * 0.025) * 2.2
+  // Big rolling hills (long wavelength, tall) — the main relief.
+  const hills =
+    Math.sin(x * 0.012 + 1.7) * Math.cos(z * 0.009 - 0.6) * 4.0 +
+    Math.sin((x + z) * 0.007) * 2.2
+  // Mid-scale dunes (the original undulation) + a fine surface ripple.
+  const dunes = Math.sin(x * 0.03) * Math.cos(z * 0.025) * 1.6
+  const ripple = Math.sin(x * 0.07 - 0.4) * Math.cos(z * 0.06 + 1.1) * 0.7
+  return WORLD.seafloorY + hills + dunes + ripple
 }
 
 /** A uniform random point in the annulus [inner, outer] around the origin. Pure given rng. */

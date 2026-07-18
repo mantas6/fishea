@@ -107,6 +107,18 @@ describe('clampToBounds', () => {
     expect(Math.hypot(out.x, out.z)).toBeCloseTo(WORLD.radius)
     expect(out.x).toBeCloseTo(out.z)
   })
+
+  it('follows a terrain floor sampler when provided', () => {
+    const floorHeight = () => 12 // a hill 12 units tall under this column
+    const out = clampToBounds({ x: 0, y: 5, z: 0 }, WORLD, floorHeight)
+    expect(out.y).toBe(12 + WORLD.fishFloorMargin)
+  })
+
+  it('leaves positions above the terrain floor untouched', () => {
+    const floorHeight = () => 12
+    const p = { x: 0, y: 30, z: 0 }
+    expect(clampToBounds(p, WORLD, floorHeight)).toEqual(p)
+  })
 })
 
 describe('isWithinBounds', () => {

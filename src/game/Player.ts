@@ -14,6 +14,7 @@ import {
   stepVelocity,
 } from './movement.js'
 import type { Vec3 } from './movement.js'
+import { seafloorHeight } from './world.js'
 import { dampOrientation } from './orient.js'
 import type { SourceState } from './input/normalize.js'
 
@@ -112,7 +113,8 @@ export class Player {
       ? { ...PLAYER_MOTION, dragLambda: PLAYER_MOTION.dragLambda * BRAKE_DRAG_MULTIPLIER }
       : PLAYER_MOTION
     this.velocity = stepVelocity(this.velocity, desired, motion, dt)
-    this.position = clampToBounds(integrate(this.position, this.velocity, dt), WORLD)
+    // Terrain-following floor so the fish never clips through the hills.
+    this.position = clampToBounds(integrate(this.position, this.velocity, dt), WORLD, seafloorHeight)
 
     this._syncTransform(false, dt)
     this.fish.update(dt, this.currentSpeed)

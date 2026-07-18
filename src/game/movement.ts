@@ -239,13 +239,26 @@ export function integrate(position: Vec3, velocity: Vec3, dt: number): Vec3 {
 }
 
 /**
- * Clamp a position so the fish stays inside the play volume:
- *  - y between (seafloorY + margin) and (surfaceY - margin)
- *  - XZ radial distance <= radius
- * Pure — returns a new clamped object.
+ * A sampler returning the seafloor height at an (x, z) column. Passed in by the
+ * caller so this pure module never has to import the (Three.js-bound) terrain.
  */
-export function clampToBounds(position: Vec3, bounds: WorldBounds = WORLD): Vec3 {
-  const minY = bounds.seafloorY + bounds.fishFloorMargin
+export type FloorHeightFn = (x: number, z: number) => number
+
+/**
+ * Clamp a position so the fish stays inside the play volume:
+ *  - y between (floor + margin) and (surfaceY - margin)
+ *  - XZ radial distance <= radius
+ * When `floorHeight` is supplied the lower bound follows the undulating
+ * seafloor (so fish never clip through hills); otherwise it uses the flat
+ * `seafloorY`. Pure — returns a new clamped object.
+ */
+export function clampToBounds(
+  position: Vec3,
+  bounds: WorldBounds = WORLD,
+  floorHeight?: FloorHeightFn,
+): Vec3 {
+  const floorY = floorHeight ? floorHeight(position.x, position.z) : bounds.seafloorY
+  const minY = floorY + bounds.fishFloorMargin
   const maxY = bounds.surfaceY - bounds.fishSurfaceMargin
 
   let { x, y, z } = position
@@ -263,10 +276,17 @@ export function clampToBounds(position: Vec3, bounds: WorldBounds = WORLD): Vec3
 }
 
 /**
- * Returns true when a position is within the play volume (inclusive).
+ * Returns true when a position is within the play volume (inclusive). Like
+ * {@link clampToBounds}, an optional `floorHeight` makes the lower bound follow
+ * the terrain instead of the flat `seafloorY`.
  */
-export function isWithinBounds(position: Vec3, bounds: WorldBounds = WORLD): boolean {
-  const minY = bounds.seafloorY + bounds.fishFloorMargin
+export function isWithinBounds(
+  position: Vec3,
+  bounds: WorldBounds = WORLD,
+  floorHeight?: FloorHeightFn,
+): boolean {
+  const floorY = floorHeight ? floorHeight(position.x, position.z) : bounds.seafloorY
+  const minY = floorY + bounds.fishFloorMargin
   const maxY = bounds.surfaceY - bounds.fishSurfaceMargin
   if (position.y < minY || position.y > maxY) return false
   return Math.hypot(position.x, position.z) <= bounds.radius + 1e-9
