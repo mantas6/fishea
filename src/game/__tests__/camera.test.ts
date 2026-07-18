@@ -4,6 +4,9 @@ import {
   dampVector,
   computeCameraTarget,
   CAMERA_DEFAULTS,
+  framingScale,
+  scaleCameraOptions,
+  FRAMING_DEFAULTS,
   createOrbitState,
   updateOrbitState,
   ORBIT_DEFAULTS,
@@ -91,6 +94,84 @@ describe('computeCameraTarget', () => {
     const base = computeCameraTarget(player, 0, 0, CAMERA_DEFAULTS)
     const orbited = computeCameraTarget(player, 0, 0, CAMERA_DEFAULTS, { yaw: 1.0, pitch: 0.3 })
     expect(orbited.lookAt).toEqual(base.lookAt)
+  })
+})
+
+describe('framingScale', () => {
+  it('is exactly 1 at the start size (default framing preserved)', () => {
+    expect(framingScale(FRAMING_DEFAULTS.startSize)).toBeCloseTo(1)
+  })
+
+  it('clamps to 1 at or below the start size (never dives closer)', () => {
+    expect(framingScale(FRAMING_DEFAULTS.startSize * 0.5)).toBeCloseTo(1)
+    expect(framingScale(0)).toBeCloseTo(1)
+  })
+
+  it('grows monotonically as the fish grows', () => {
+    let prev = framingScale(FRAMING_DEFAULTS.startSize)
+    for (let size = FRAMING_DEFAULTS.startSize; size <= 6; size += 0.4) {
+      const s = framingScale(size)
+      expect(s).toBeGreaterThanOrEqual(prev)
+      prev = s
+    }
+  })
+
+  it('pulls the camera back but does not crowd or over-retreat at max size', () => {
+    // At max size (6) the factor is > 1 (pulled back) but capped by maxScale.
+    const s = framingScale(6)
+    expect(s).toBeGreaterThan(1)
+    expect(s).toBeLessThanOrEqual(FRAMING_DEFAULTS.maxScale)
+  })
+
+  it('respects the maxScale cap for very large sizes', () => {
+    expect(framingScale(1000)).toBeCloseTo(FRAMING_DEFAULTS.maxScale)
+  })
+})
+
+describe('scaleCameraOptions', () => {
+  it('leaves options unchanged at scale 1', () => {
+    const out = scaleCameraOptions(CAMERA_DEFAULTS, 1)
+    expect(out.distance).toBeCloseTo(CAMERA_DEFAULTS.distance)
+    expect(out.height).toBeCloseTo(CAMERA_DEFAULTS.height)
+    expect(out.lookAhead).toBeCloseTo(CAMERA_DEFAULTS.lookAhead)
+  })
+
+  it('scales distance, height and lookAhead but not lambda', () => {
+    const out = scaleCameraOptions(CAMERA_DEFAULTS, 2)
+    expect(out.distance).toBeCloseTo(CAMERA_DEFAULTS.distance * 2)
+    expect(out.height).toBeCloseTo(CAMERA_DEFAULTS.height * 2)
+    expect(out.lookAhead).toBeCloseTo(CAMERA_DEFAULTS.lookAhead * 2)
+    expect(out.lambda).toBe(CAMERA_DEFAULTS.lambda)
+  })
+
+  it('at start size the scaled framing equals the default distance', () => {
+    const opts = scaleCameraOptions(CAMERA_DEFAULTS, framingScale(FRAMING_DEFAULTS.startSize))
+    const { position } = computeCameraTarget({ x: 0, y: 20, z: 0 }, 0, 0, opts)
+    expect(position.z).toBeCloseTo(CAMERA_DEFAULTS.distance)
+  })
+
+  it('a larger fish places the camera farther behind', () => {
+    const big = scaleCameraOptions(CAMERA_DEFAULTS, framingScale(6))
+    const { position } = computeCameraTarget({ x: 0, y: 20, z: 0 }, 0, 0, big)
+    expect(position.z).toBeGreaterThan(CAMERA_DEFAULTS.distance)
+  })
+})
+
+describe('framing smoothing converges', () => {
+  it('damps the framing factor toward the target for a grown fish', () => {
+    const target = framingScale(6)
+    let scale = framingScale(FRAMING_DEFAULTS.startSize) // start at 1
+    for (let i = 0; i < 300; i++) {
+      scale = damp(scale, target, CAMERA_DEFAULTS.lambda, 0.05)
+    }
+    expect(scale).toBeCloseTo(target)
+  })
+
+  it('eases outward without overshooting the target', () => {
+    const target = framingScale(6)
+    const mid = damp(1, target, CAMERA_DEFAULTS.lambda, 0.1)
+    expect(mid).toBeGreaterThan(1)
+    expect(mid).toBeLessThanOrEqual(target)
   })
 })
 

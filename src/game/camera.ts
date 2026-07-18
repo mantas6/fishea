@@ -20,6 +20,59 @@ export const CAMERA_DEFAULTS: CameraOptions = {
   lambda: 4, // smoothing rate (higher = snappier)
 }
 
+// --- Size-aware framing --------------------------------------------------
+// The player fish grows as it eats. With a fixed camera distance a bigger fish
+// fills more of the screen and crowds the camera. To keep a comfortable, roughly
+// constant apparent size we pull the camera back as the fish grows.
+
+/** Tuning for size-aware camera framing. */
+export interface FramingOptions {
+  /** Player size at which the base framing (CAMERA_DEFAULTS) is used exactly. */
+  startSize: number
+  /**
+   * Exponent applied to (size / startSize). 0 = no scaling (fixed distance),
+   * 1 = distance scales linearly with size (constant apparent size). Values in
+   * between let the fish appear a little bigger when large without crowding the
+   * camera.
+   */
+  exponent: number
+  /** Hard cap on the framing factor so the camera can't retreat indefinitely. */
+  maxScale: number
+}
+
+export const FRAMING_DEFAULTS: FramingOptions = {
+  startSize: 1.6, // matches Game's initial player size
+  exponent: 0.7, // gentle pull-back: apparent size grows ~size^0.3
+  maxScale: 3, // at/above ~max size (6) the camera stops retreating
+}
+
+/**
+ * Framing factor for a given fish size relative to the start size. Pure.
+ *
+ * At `size === startSize` this is exactly 1 so the default framing (distance 13)
+ * is preserved. It grows monotonically as the fish grows so the camera pulls
+ * back and the fish keeps a consistent apparent size on screen. Sizes at/below
+ * the start size are clamped to 1 (the camera never dives closer than default)
+ * and the factor is capped at `maxScale`.
+ */
+export function framingScale(size: number, opts: FramingOptions = FRAMING_DEFAULTS): number {
+  const ratio = Math.max(1, size / opts.startSize)
+  return Math.min(opts.maxScale, ratio ** opts.exponent)
+}
+
+/**
+ * Scale a camera config's distance, height and lookAhead by a framing factor.
+ * `lambda` (smoothing rate) is left untouched. Pure — returns a new object.
+ */
+export function scaleCameraOptions(opts: CameraOptions, scale: number): CameraOptions {
+  return {
+    distance: opts.distance * scale,
+    height: opts.height * scale,
+    lookAhead: opts.lookAhead * scale,
+    lambda: opts.lambda,
+  }
+}
+
 /**
  * Frame-rate independent exponential damping toward a target scalar.
  */

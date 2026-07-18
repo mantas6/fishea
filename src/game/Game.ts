@@ -7,8 +7,11 @@ import { headingToDirection } from './movement.js'
 import { Player } from './Player.js'
 import {
   computeCameraTarget,
+  damp,
   dampVector,
   CAMERA_DEFAULTS,
+  framingScale,
+  scaleCameraOptions,
   createOrbitState,
   updateOrbitState,
 } from './camera.js'
@@ -148,6 +151,9 @@ export class Game {
   private _unsubs: Array<() => void>
   private _camPos: Vec3
   private _camLook: Vec3
+  // Smoothed size-aware framing factor (1 at start size). Eased over time so
+  // the camera glides outward when the fish grows in steps rather than snapping.
+  private _camScale: number
   private _orbit: OrbitState
   private _running: boolean
   private _rafId: number | null
@@ -242,6 +248,7 @@ export class Game {
     // Smoothed camera state.
     this._camPos = { x: this.camera.position.x, y: this.camera.position.y, z: this.camera.position.z }
     this._camLook = { x: 0, y: 20, z: 0 }
+    this._camScale = framingScale(this.player.size)
 
     // Idle-orbit camera state: when the player isn't swimming, look input
     // orbits the camera around the fish instead of steering it.
@@ -494,6 +501,7 @@ export class Game {
       this.player.fish.setSize(this._initialPlayerSize)
     }
     this.player._syncTransform()
+    this._camScale = framingScale(this.player.size)
     this._orbit = createOrbitState()
 
     // Rebuild the fish population from scratch.
@@ -507,11 +515,16 @@ export class Game {
   }
 
   _updateCamera(dt: number): void {
+    // Ease the framing factor toward the target for the fish's current size so
+    // the camera glides outward as it grows (size changes in steps when eating).
+    this._camScale = damp(this._camScale, framingScale(this.player.size), CAMERA_DEFAULTS.lambda, dt)
+    // Same scaled options drive both follow and idle-orbit framing.
+    const opts = scaleCameraOptions(CAMERA_DEFAULTS, this._camScale)
     const { position, lookAt } = computeCameraTarget(
       this.player.position,
       this.player.yaw,
       this.player.pitch,
-      CAMERA_DEFAULTS,
+      opts,
       { yaw: this._orbit.yaw, pitch: this._orbit.pitch },
     )
     this._camPos = dampVector(this._camPos, position, CAMERA_DEFAULTS.lambda, dt)
