@@ -113,6 +113,24 @@ export function shouldSuppressHurt(
   return dt >= 0 && dt <= windowMs
 }
 
+/**
+ * Decide whether the death cue should actually play. Guards against a retrigger
+ * that stacks the (already very soft) cue on top of itself: if another death
+ * fired within `windowMs`, skip. A null `lastDeathMs` (fresh run / after
+ * respawn) always plays. Pure: takes explicit timestamps in milliseconds.
+ */
+export function shouldPlayDeath(
+  nowMs: number,
+  lastDeathMs: number | null,
+  windowMs = 1000,
+): boolean {
+  if (lastDeathMs == null) return true
+  if (!Number.isFinite(nowMs) || !Number.isFinite(lastDeathMs)) return true
+  const dt = nowMs - lastDeathMs
+  // Suppress only a genuine retrigger landing within the window (dt >= 0).
+  return !(dt >= 0 && dt <= windowMs)
+}
+
 export default {
   MINOR_PENTATONIC,
   semitoneToFreq,
@@ -121,4 +139,5 @@ export default {
   heartbeatActive,
   heartbeatBpm,
   shouldSuppressHurt,
+  shouldPlayDeath,
 }

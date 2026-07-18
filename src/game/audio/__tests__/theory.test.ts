@@ -7,6 +7,7 @@ import {
   heartbeatActive,
   heartbeatBpm,
   shouldSuppressHurt,
+  shouldPlayDeath,
 } from '../theory.js'
 
 describe('semitoneToFreq', () => {
@@ -164,5 +165,36 @@ describe('shouldSuppressHurt (fatal-bite window)', () => {
   it('ignores non-finite timestamps', () => {
     expect(shouldSuppressHurt(NaN, 1000)).toBe(false)
     expect(shouldSuppressHurt(1000, Infinity)).toBe(false)
+  })
+})
+
+describe('shouldPlayDeath (retrigger guard)', () => {
+  it('plays on a fresh run when no death has occurred', () => {
+    expect(shouldPlayDeath(1000, null)).toBe(true)
+  })
+
+  it('suppresses a retrigger landing within the window', () => {
+    expect(shouldPlayDeath(1000, 1000)).toBe(false) // same instant
+    expect(shouldPlayDeath(1500, 1000)).toBe(false) // 500ms later
+    expect(shouldPlayDeath(2000, 1000)).toBe(false) // exactly at edge
+  })
+
+  it('plays again once the window has elapsed', () => {
+    expect(shouldPlayDeath(2001, 1000)).toBe(true)
+    expect(shouldPlayDeath(5000, 1000)).toBe(true)
+  })
+
+  it('plays for a death timestamp that predates the last (negative dt)', () => {
+    expect(shouldPlayDeath(900, 1000)).toBe(true)
+  })
+
+  it('respects a custom window', () => {
+    expect(shouldPlayDeath(1300, 1000, 250)).toBe(true) // dt 300 > 250
+    expect(shouldPlayDeath(1200, 1000, 300)).toBe(false) // dt 200 <= 300
+  })
+
+  it('plays through non-finite timestamps rather than swallowing a real death', () => {
+    expect(shouldPlayDeath(NaN, 1000)).toBe(true)
+    expect(shouldPlayDeath(1000, Infinity)).toBe(true)
   })
 })

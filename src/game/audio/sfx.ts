@@ -219,25 +219,20 @@ export function createSfx(engine: AudioEngine): SfxKit {
     },
 
     /**
-     * Death: a gentle, melancholic farewell rather than a harsh sting. Three
-     * slow descending notes spelling a soft C-minor fall (G4 -> Eb4 -> Bb3) on
-     * mellow sines through a lowpass, each with a slow attack and long release
-     * and played well below the other SFX (it lands on a quiet moment). Notes
-     * overlap slightly so the phrase breathes instead of stabbing.
+     * Death: a soft, muffled underwater "thud/sigh" — deliberately NOT a melody.
+     * A single mellow low sine through a low lowpass, doubled an octave below for
+     * weight (same pitch class, so there's no melodic interval to hook the ear),
+     * with a gentle attack and a short, smooth release. Peaks sit far below every
+     * other SFX (~0.09 vs 0.5–0.6) so the moment reads as a quiet fade rather
+     * than a sting. No harsh oscillators, no high frequencies, no repetition.
      */
     death() {
       if (!ready()) return
       const t = engine.now()
-      const notes: Array<{ freq: number; at: number }> = [
-        { freq: 392.0, at: 0.0 }, // G4
-        { freq: 311.13, at: 0.5 }, // Eb4
-        { freq: 233.08, at: 1.05 }, // Bb3
-      ]
-      for (const n of notes) {
-        softTone({ start: t + n.at, freq: n.freq, peak: 0.16, attack: 0.08, release: 1.3, cutoff: 1100 })
-      }
-      // A faint low sine underneath for warmth, very quiet and slow.
-      softTone({ start: t, freq: 116.54, type: 'sine', peak: 0.08, attack: 0.12, release: 2.2, cutoff: 500 })
+      // Muffled low tone (F3) — the soft "sigh".
+      softTone({ start: t, freq: 174.61, type: 'sine', peak: 0.09, attack: 0.1, release: 0.9, cutoff: 500 })
+      // Faint sub an octave down (F2) for a soft settling weight.
+      softTone({ start: t, freq: 87.31, type: 'sine', peak: 0.05, attack: 0.12, release: 1.1, cutoff: 320 })
     },
 
     /** Sprint start: subtle rising bubbly swish. */

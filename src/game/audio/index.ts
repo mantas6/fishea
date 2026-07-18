@@ -8,7 +8,7 @@ import { AudioEngine } from './engine.js'
 import { createSfx, createHeartbeat } from './sfx.js'
 import type { Heartbeat, SfxKit } from './sfx.js'
 import { Music } from './music.js'
-import { heartbeatActive, heartbeatBpm, shouldSuppressHurt } from './theory.js'
+import { heartbeatActive, heartbeatBpm, shouldSuppressHurt, shouldPlayDeath } from './theory.js'
 import type { EventEmitter, Unsubscribe } from '../events.js'
 import type { HudSnapshot } from '../Game.js'
 
@@ -105,10 +105,14 @@ export class AudioManager {
       ev.on('fish-eaten', () => this.sfx.bite()),
       ev.on('bite-missed', () => this.sfx.miss()),
       ev.on('player-died', () => {
-        this._lastDeathAt = this._now()
+        const now = this._now()
+        // Guard against a retrigger stacking the cue on itself (fires once/death).
+        if (!shouldPlayDeath(now, this._lastDeathAt)) return
+        this._lastDeathAt = now
         this.sfx.death()
         this._setHeartbeat(false) // no thumping on the death screen
-        this.music.duck() // give the gentle death cue some quiet space
+        // Duck the music deeper (and briefly) so the soft cue sits in real quiet.
+        this.music.duck(0.3, 1.0, 1.2)
       }),
       ev.on('player-respawned', () => {
         this._hpFraction = 1
