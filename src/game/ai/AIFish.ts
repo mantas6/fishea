@@ -12,8 +12,14 @@ import {
   nearestThreat,
   nearestPrey,
   fleeDirection,
+  jitterDirection,
   chaseDirection,
   wanderStep,
+  fishCruiseSpeed,
+  fishChaseSpeed,
+  fishFleeSpeed,
+  stepFleeStamina,
+  fatiguedFleeSpeed,
   vnorm,
 } from './behavior.js'
 import type { AiConfig, BehaviorMode, FishDescriptor, FishTraits, Rng } from './behavior.js'
@@ -61,6 +67,9 @@ export class AIFish implements FishDescriptor {
   private _rng: Rng
   // Base config folded with this fish's traits; drives perception + movement.
   private _config: AiConfig
+  // Flee stamina (0..1): drains while fleeing, recovers otherwise. Prey burst
+  // briefly then tire, so a sustained chase closes the gap.
+  private _fleeStamina: number
   private _align: THREE.Group
 
   constructor(options: AIFishOptions = {}) {
@@ -77,6 +86,7 @@ export class AIFish implements FishDescriptor {
     this.isPlayer = false
     this.alive = true
     this.mode = 'wander'
+    this._fleeStamina = 1
 
     this.position = options.position ? { ...options.position } : { x: 0, y: 20, z: 0 }
     this.velocity = { x: 0, y: 0, z: 0 }
@@ -133,19 +143,25 @@ export class AIFish implements FishDescriptor {
     // notice threats later than ordinary fish.
     const cfg = this._config
     const threat = nearestThreat(self, neighbors, cfg)
+    const fleeing = threat !== null
+    // Burn/recover flee stamina so prey can't sprint away forever.
+    this._fleeStamina = stepFleeStamina(this._fleeStamina, fleeing, dt)
     if (threat) {
-      targetDir = fleeDirection(this.position, threat.position)
-      speed = cfg.burstSpeed
+      // Flee away from the threat, but veer slightly so the escape isn't a
+      // perfectly straight line the pursuer can never gain on. Speeds are
+      // size-scaled (small fish are slow) and drop as the fish tires.
+      targetDir = jitterDirection(fleeDirection(this.position, threat.position), this._rng, undefined, cfg)
+      speed = fatiguedFleeSpeed(fishFleeSpeed(this.size, cfg), this._fleeStamina)
       this.mode = 'flee'
     } else {
       const prey = nearestPrey(self, neighbors, cfg)
       if (prey) {
         targetDir = chaseDirection(this.position, prey.position)
-        speed = cfg.chaseSpeed
+        speed = fishChaseSpeed(this.size, cfg)
         this.mode = 'chase'
       } else {
         targetDir = wanderStep(this.heading, this._rng, dt, cfg)
-        speed = cfg.cruiseSpeed
+        speed = fishCruiseSpeed(this.size, cfg)
         this.mode = 'wander'
       }
     }

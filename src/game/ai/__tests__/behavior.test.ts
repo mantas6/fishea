@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   AI_CONFIG,
   TRAIT_CONFIG,
+  FLEE_FATIGUE,
   DEFAULT_TRAITS,
   makeRng,
   rollFishTraits,
@@ -11,8 +12,14 @@ import {
   nearestThreat,
   nearestPrey,
   fleeDirection,
+  jitterDirection,
   chaseDirection,
   wanderStep,
+  fishCruiseSpeed,
+  fishChaseSpeed,
+  fishFleeSpeed,
+  stepFleeStamina,
+  fatiguedFleeSpeed,
   eatRange,
   canEat,
   inEatRange,
@@ -24,6 +31,7 @@ import {
   vdot,
   vsub,
 } from '../behavior.js'
+import { PLAYER_MOTION } from '../../movement.js'
 
 describe('classifyNeighbor', () => {
   it('flags bigger fish as threats at the 1.25x threshold', () => {
@@ -301,6 +309,11 @@ describe('applyTraits', () => {
     expect(cfg.burstSpeed).toBeCloseTo(AI_CONFIG.burstSpeed * 0.5)
     expect(cfg.chaseSpeed).toBeCloseTo(AI_CONFIG.chaseSpeed * 0.5)
     expect(cfg.cruiseSpeed).toBeCloseTo(AI_CONFIG.cruiseSpeed * 0.5)
+    // Both the caps and the size ramps scale, so a sluggish fish is slower at
+    // every size.
+    expect(cfg.burstSpeedPerSize).toBeCloseTo(AI_CONFIG.burstSpeedPerSize * 0.5)
+    expect(cfg.chaseSpeedPerSize).toBeCloseTo(AI_CONFIG.chaseSpeedPerSize * 0.5)
+    expect(cfg.cruiseSpeedPerSize).toBeCloseTo(AI_CONFIG.cruiseSpeedPerSize * 0.5)
     expect(cfg.turnRate).toBeCloseTo(AI_CONFIG.turnRate * 0.6)
     expect(cfg.senseRadius).toBeCloseTo(AI_CONFIG.senseRadius * 0.6)
     expect(cfg.wanderRate).toBeCloseTo(AI_CONFIG.wanderRate * 0.55)
@@ -319,6 +332,91 @@ describe('applyTraits', () => {
     expect(cfg.preyRatio).toBe(AI_CONFIG.preyRatio)
     expect(cfg.threatRatio).toBe(AI_CONFIG.threatRatio)
     expect(cfg.aggroRadius).toBe(AI_CONFIG.aggroRadius)
+  })
+})
+
+describe('size-scaled swim speeds', () => {
+  it('small fish are slow; speed grows with size up to a cap', () => {
+    // Cruise < chase < flee at any given size, and each ramps up with size.
+    expect(fishFleeSpeed(0.5)).toBeLessThan(fishFleeSpeed(1.5))
+    expect(fishFleeSpeed(1.5)).toBeLessThan(fishFleeSpeed(3))
+    // Caps hold: a huge fish never exceeds the configured ceilings.
+    expect(fishCruiseSpeed(100)).toBeCloseTo(AI_CONFIG.cruiseSpeed)
+    expect(fishChaseSpeed(100)).toBeCloseTo(AI_CONFIG.chaseSpeed)
+    expect(fishFleeSpeed(100)).toBeCloseTo(AI_CONFIG.burstSpeed)
+  })
+
+  it('keeps cruise < chase < flee for every size so prey never flee slower than they wander', () => {
+    for (let size = 0.2; size <= AI_CONFIG.maxSize; size += 0.2) {
+      const cruise = fishCruiseSpeed(size)
+      const chase = fishChaseSpeed(size)
+      const flee = fishFleeSpeed(size)
+      expect(cruise).toBeLessThanOrEqual(chase + 1e-9)
+      expect(chase).toBeLessThanOrEqual(flee + 1e-9)
+    }
+  })
+
+  it('reads a fish\'s traits straight off the folded config', () => {
+    const traits = { sluggish: true, speedMult: 0.5, turnMult: 0.6, senseMult: 0.6, wanderMult: 0.55 }
+    const cfg = applyTraits(AI_CONFIG, traits)
+    // A sluggish fish flees at half the speed of an ordinary one of the same size.
+    expect(fishFleeSpeed(2, cfg)).toBeCloseTo(fishFleeSpeed(2) * 0.5)
+  })
+})
+
+describe('flee fatigue', () => {
+  it('drains while fleeing and recovers otherwise, clamped to [0,1]', () => {
+    expect(stepFleeStamina(1, true, 1)).toBeCloseTo(1 - FLEE_FATIGUE.drainPerSec)
+    expect(stepFleeStamina(0, true, 1)).toBe(0) // can't go negative
+    expect(stepFleeStamina(0, false, 1)).toBeCloseTo(FLEE_FATIGUE.recoverPerSec)
+    expect(stepFleeStamina(1, false, 1)).toBe(1) // can't exceed full
+  })
+
+  it('a fully winded fish flees at tiredSpeedMult of its fresh speed', () => {
+    const fresh = fishFleeSpeed(3)
+    expect(fatiguedFleeSpeed(fresh, 1)).toBeCloseTo(fresh) // fresh => full speed
+    expect(fatiguedFleeSpeed(fresh, 0)).toBeCloseTo(fresh * FLEE_FATIGUE.tiredSpeedMult)
+    // Monotonic: less stamina => slower.
+    expect(fatiguedFleeSpeed(fresh, 0.5)).toBeLessThan(fatiguedFleeSpeed(fresh, 1))
+    expect(fatiguedFleeSpeed(fresh, 0.5)).toBeGreaterThan(fatiguedFleeSpeed(fresh, 0))
+  })
+})
+
+describe('jitterDirection', () => {
+  it('returns a unit vector that stays roughly aligned with the input heading', () => {
+    const rng = makeRng(5)
+    const dir = { x: 0, y: 0, z: 1 }
+    for (let i = 0; i < 200; i++) {
+      const j = jitterDirection(dir, rng)
+      expect(vlen(j)).toBeCloseTo(1)
+      // Small nudge only: still points broadly the same way (positive dot).
+      expect(vdot(j, dir)).toBeGreaterThan(0.5)
+    }
+  })
+})
+
+describe('chase math invariant: eatable prey are catchable', () => {
+  const PLAYER_SPRINT = PLAYER_MOTION.maxSpeed * PLAYER_MOTION.sprintMultiplier // 14.4
+
+  it('every eatable-size fish, worst-case (fastest) traits, flees below the player sprint by a healthy margin', () => {
+    // Worst case for the player = the fastest possible eatable fish: ordinary
+    // (non-sluggish) traits and fresh (unfatigued) burst. For any player size up
+    // to the cap, the biggest fish it can eat is player.size * preyRatio.
+    const fastest = applyTraits(AI_CONFIG, DEFAULT_TRAITS)
+    for (let playerSize = 0.6; playerSize <= AI_CONFIG.maxSize; playerSize += 0.2) {
+      const biggestEatable = playerSize * AI_CONFIG.preyRatio
+      const fresh = fishFleeSpeed(biggestEatable, fastest)
+      // Healthy margin: prey flee at most 80% of the player's sprint speed.
+      expect(fresh).toBeLessThan(PLAYER_SPRINT * 0.8)
+    }
+  })
+
+  it('the very biggest eatable prey in the game still flees well under the sprint', () => {
+    const biggest = AI_CONFIG.maxSize * AI_CONFIG.preyRatio // 4.8
+    expect(fishFleeSpeed(biggest)).toBeLessThan(PLAYER_SPRINT)
+    // ...and once it tires it drops below even the player's base cruise speed,
+    // so a sustained chase always closes the gap.
+    expect(fatiguedFleeSpeed(fishFleeSpeed(biggest), 0)).toBeLessThan(PLAYER_MOTION.maxSpeed)
   })
 })
 

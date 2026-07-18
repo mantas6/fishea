@@ -23,9 +23,17 @@ export interface AiConfig {
   wanderRate: number
   wanderVertical: number
   turnRate: number
+  // Speeds are SIZE-SCALED: the effective speed of a fish is
+  //   min(<mode>Speed, <mode>SpeedPerSize * size)
+  // so small (eatable) fish are naturally slow — a fish's flee speed grows with
+  // its body size but is capped well below the player's sprint speed. The *Speed
+  // fields are the hard caps; the *SpeedPerSize fields set the linear ramp.
   cruiseSpeed: number
+  cruiseSpeedPerSize: number
   chaseSpeed: number
+  chaseSpeedPerSize: number
   burstSpeed: number
+  burstSpeedPerSize: number
   eatRangeBase: number
   growthFraction: number
   maxSize: number
@@ -91,13 +99,39 @@ export const AI_CONFIG: AiConfig = {
   wanderRate: 2.2, // how quickly the wander heading jitters
   wanderVertical: 0.35, // damp vertical jitter so fish mostly swim level
   turnRate: 3.5, // max heading change (rad/s) — caps abrupt steering swings
-  cruiseSpeed: 6, // wander cruise speed (units/s)
-  chaseSpeed: 9.5, // speed while chasing prey
-  burstSpeed: 13, // panic speed while fleeing a threat
-  eatRangeBase: 2.0, // eat range = eatRangeBase * eater.size
+  // Size-scaled speeds. A fish swims at min(cap, perSize * size), so small
+  // eatable fish are much slower than the player and the biggest eatable prey
+  // (player.size * preyRatio, at most maxSize*0.8 = 4.8) still flees below the
+  // player's 14.4 u/s sprint. See fishFleeSpeed / the "chase math" invariant test.
+  cruiseSpeed: 6, // cap on wander cruise speed (units/s)
+  cruiseSpeedPerSize: 2.0, // cruise ramp: hits the cap at size 3.0
+  chaseSpeed: 8, // cap on speed while chasing prey
+  chaseSpeedPerSize: 2.6, // chase ramp: hits the cap at ~size 3.08
+  burstSpeed: 9.5, // cap on panic flee speed (< player sprint 14.4 by ~34%)
+  burstSpeedPerSize: 3.0, // flee ramp: hits the cap at ~size 3.17
+  eatRangeBase: 2.4, // eat range = eatRangeBase * eater.size (roomier bite reach)
   growthFraction: 0.25, // eater grows by this fraction of the prey's size
   maxSize: 6, // hard cap on how big a fish can grow
 }
+
+/** Tuning for prey flee fatigue: a fleeing fish bursts, then tires and slows. */
+export interface FleeFatigueConfig {
+  /** Flee stamina (0..1) burned per second while actively fleeing. */
+  drainPerSec: number
+  /** Flee stamina recovered per second while not fleeing. */
+  recoverPerSec: number
+  /** Flee-speed multiplier once stamina is fully depleted (0..1). */
+  tiredSpeedMult: number
+}
+
+export const FLEE_FATIGUE: FleeFatigueConfig = {
+  drainPerSec: 0.5, // full burst lasts ~2s before the fish is fully winded
+  recoverPerSec: 0.4, // ~2.5s of not fleeing to recover a full burst again
+  tiredSpeedMult: 0.55, // a winded fish flees at 55% speed => catchable on a sustained chase
+}
+
+/** Max angular jitter (unit-vector offset) applied to a prey's flee heading. */
+export const FLEE_JITTER = 0.35
 
 export const TRAIT_CONFIG: TraitConfig = {
   sluggishChance: 0.35, // ~35% of ordinary fish are sluggish
@@ -202,10 +236,73 @@ export function applyTraits(config: AiConfig, traits: FishTraits): AiConfig {
     senseRadius: config.senseRadius * traits.senseMult,
     turnRate: config.turnRate * traits.turnMult,
     wanderRate: config.wanderRate * traits.wanderMult,
+    // Scale both the caps and the per-size ramps so a sluggish fish is slower at
+    // every size — the size-scaled speed helpers below then read straight off
+    // the folded config.
     cruiseSpeed: config.cruiseSpeed * traits.speedMult,
+    cruiseSpeedPerSize: config.cruiseSpeedPerSize * traits.speedMult,
     chaseSpeed: config.chaseSpeed * traits.speedMult,
+    chaseSpeedPerSize: config.chaseSpeedPerSize * traits.speedMult,
     burstSpeed: config.burstSpeed * traits.speedMult,
+    burstSpeedPerSize: config.burstSpeedPerSize * traits.speedMult,
   }
+}
+
+// --- Size-scaled swim speeds ----------------------------------------------
+// A fish's effective speed grows with its body size but is capped, so tiny
+// (eatable) fish are naturally slow and the biggest eatable prey still flees
+// well below the player's sprint. Pure — one source of truth shared by AIFish
+// and the chase-math tests.
+
+function clamp01(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v
+}
+
+/** Wander cruise speed for a fish of the given size. */
+export function fishCruiseSpeed(size: number, config: AiConfig = AI_CONFIG): number {
+  return Math.min(config.cruiseSpeed, config.cruiseSpeedPerSize * Math.max(0, size))
+}
+
+/** Prey-chase speed for a fish of the given size. */
+export function fishChaseSpeed(size: number, config: AiConfig = AI_CONFIG): number {
+  return Math.min(config.chaseSpeed, config.chaseSpeedPerSize * Math.max(0, size))
+}
+
+/**
+ * Fresh (unfatigued) panic flee speed for a fish of the given size. This is the
+ * fastest a fish of this size can ever move; fatigue (below) only slows it.
+ */
+export function fishFleeSpeed(size: number, config: AiConfig = AI_CONFIG): number {
+  return Math.min(config.burstSpeed, config.burstSpeedPerSize * Math.max(0, size))
+}
+
+// --- Flee fatigue ---------------------------------------------------------
+
+/**
+ * Advance a fish's flee stamina (0..1) one frame: drains while fleeing,
+ * recovers otherwise, clamped. Pure.
+ */
+export function stepFleeStamina(
+  stamina: number,
+  fleeing: boolean,
+  dt: number,
+  config: FleeFatigueConfig = FLEE_FATIGUE,
+): number {
+  const rate = fleeing ? -config.drainPerSec : config.recoverPerSec
+  return clamp01(stamina + rate * dt)
+}
+
+/**
+ * Scale a fresh flee speed by current flee stamina: full speed at stamina 1,
+ * easing down to `tiredSpeedMult` of it at stamina 0. Pure.
+ */
+export function fatiguedFleeSpeed(
+  freshSpeed: number,
+  stamina: number,
+  config: FleeFatigueConfig = FLEE_FATIGUE,
+): number {
+  const mult = config.tiredSpeedMult + (1 - config.tiredSpeedMult) * clamp01(stamina)
+  return freshSpeed * mult
 }
 
 // --- Perception -----------------------------------------------------------
@@ -317,6 +414,26 @@ export function fleeDirection(selfPos: Vec3, threatPos: Vec3): Vec3 {
 }
 
 /**
+ * Nudge a (unit) heading by a small random offset so a fleeing fish doesn't run
+ * in a perfectly straight line away — this lets a pursuer cut the corner. Pure;
+ * advances the given RNG. Vertical jitter is damped so prey stay roughly level.
+ * The result is re-normalized (falls back to `dir` when it collapses to zero).
+ */
+export function jitterDirection(
+  dir: Vec3,
+  rng: Rng,
+  amount: number = FLEE_JITTER,
+  config: AiConfig = AI_CONFIG,
+): Vec3 {
+  const next = {
+    x: dir.x + (rng() - 0.5) * amount,
+    y: dir.y + (rng() - 0.5) * amount * config.wanderVertical,
+    z: dir.z + (rng() - 0.5) * amount,
+  }
+  return vnorm(next, dir)
+}
+
+/**
  * Unit vector steering TOWARD a prey position.
  */
 export function chaseDirection(selfPos: Vec3, preyPos: Vec3): Vec3 {
@@ -359,7 +476,7 @@ export function inEatRange(
  * target) for the player's directional bite. A target must be roughly in the
  * cone ahead of the fish to be biteable.
  */
-export const BITE_FACING_DOT = 0.3
+export const BITE_FACING_DOT = 0.15
 
 /** An eater performing a directional bite: where it is, its size and heading. */
 export interface BiteEater {
