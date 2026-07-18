@@ -382,6 +382,26 @@ body {
   margin: 0;
   font-size: 13px;
   color: rgba(232, 241, 255, 0.95);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* --- Control icons (shared prompt glyphs) ------------------------------- */
+
+.ctl-icon {
+  display: inline-block;
+  height: 1.4em;
+  width: auto;
+  vertical-align: middle;
+}
+
+.ctl-icon-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: middle;
 }
 
 /* --- Intro overlay ------------------------------------------------------ */
@@ -514,14 +534,16 @@ body {
   bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
-  max-width: 92vw;
-  padding: 9px 18px;
+  max-width: 94vw;
+  padding: 7px 14px;
   border-radius: 10px;
   font-size: 12px;
   letter-spacing: 0.02em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 14px;
   color: rgba(230, 242, 255, 0.96);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
   background: rgba(4, 16, 34, 0.72);
@@ -544,4 +566,26 @@ body {
 
 .hint-bar.is-hidden {
   opacity: 0;
+}
+
+.hint-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.hint-token-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: rgba(210, 232, 255, 0.85);
+}
+
+/* Inline control-icon lines inside CTAs (intro / death). */
+.cta-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
 }

@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react'
 import type { ActiveSource } from './game/input/normalize.js'
 import { controlRows } from './game/controlHints.js'
+import { ControlIconGroup } from './ui/ControlIcons.jsx'
 
 interface TabDef {
   id: ActiveSource
@@ -48,7 +49,9 @@ export default function ControlsPanel({ activeSource }: ControlsPanelProps) {
         {rows.map((row) => (
           <div className="controls-row" key={row.action}>
             <dt className="controls-action">{row.action}</dt>
-            <dd className="controls-input">{row.input}</dd>
+            <dd className="controls-input" aria-label={row.input}>
+              <ControlIconGroup ids={row.icons} />
+            </dd>
           </div>
         ))}
       </dl>

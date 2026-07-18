@@ -12,6 +12,7 @@ import { useEffect, useRef } from 'react'
 import type { ActiveSource } from './game/input/normalize.js'
 import { isIntroDismissKey } from './game/input/normalize.js'
 import ControlsPanel from './ControlsPanel.jsx'
+import { ControlIcon } from './ui/ControlIcons.jsx'
 
 interface IntroProps {
   activeSource: ActiveSource
@@ -44,8 +45,17 @@ export default function Intro({ activeSource, onDismiss }: IntroProps) {
         <h1 className="intro-title">fishea</h1>
         <p className="intro-pitch">Eat smaller fish. Avoid bigger ones. Survive.</p>
         <ControlsPanel activeSource={activeSource} />
-        <button type="button" className="intro-start" onClick={onDismiss} autoFocus>
-          Press Enter, tap outside, or press ✕ to start
+        <button
+          type="button"
+          className="intro-start"
+          onClick={onDismiss}
+          autoFocus
+          aria-label="Press Enter, tap outside, or press Cross to start"
+        >
+          <span className="cta-line">
+            Press <ControlIcon id="key:Enter" />, tap outside, or press{' '}
+            <ControlIcon id="cross" /> to start
+          </span>
         </button>
       </div>
     </div>

@@ -6,6 +6,7 @@
 import type { HudSnapshot } from './game/Game.js'
 import type { DeathCause } from './game/events.js'
 import type { AudioState } from './game/audio/index.js'
+import { ControlIcon } from './ui/ControlIcons.jsx'
 
 interface BarDef {
   key: keyof HudSnapshot
@@ -123,7 +124,11 @@ export default function Hud({ snapshot, death, onRestart, audio, onToggleMute, o
             <button type="button" className="death-restart" onClick={onRestart} autoFocus>
               Swim again
             </button>
-            <p className="death-hint">Press Enter to restart</p>
+            <p className="death-hint" aria-label="Press Enter to restart">
+              <span className="cta-line">
+                Press <ControlIcon id="key:Enter" /> to restart
+              </span>
+            </p>
           </div>
         </div>
       ) : null}
