@@ -179,6 +179,15 @@ export function hasInputActivity(state: SourceState | null | undefined, threshol
 }
 
 /**
+ * Which keyboard keys explicitly dismiss the intro overlay. Limited to Enter
+ * and Space so that bumping arrow keys / Tab (used to browse the controls
+ * reference) can't accidentally lose the intro.
+ */
+export function isIntroDismissKey(key: string): boolean {
+  return key === 'Enter' || key === ' ' || key === 'Spacebar'
+}
+
+/**
  * Merge the two input sources into one normalized state, applying the
  * gamepad-priority rule. When neither source is active the previous
  * ("latched") source is retained so the HUD can keep showing the last device.

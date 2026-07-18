@@ -1,9 +1,16 @@
-// First-load intro overlay. Renders over the (already running) scene and is
-// dismissed by any key / click / tap / gamepad button, or the ✕ button. While
-// it's up the game is paused (App sets game.paused), so stats don't drain.
+// First-load intro overlay. Renders over the (already running) scene. It's
+// meant to be *browsable*: clicking the controls tabs or touching a gamepad
+// stick/d-pad to inspect the mappings must NOT dismiss it. Dismissal is
+// explicit only:
+//   - the Start button,
+//   - Enter / Space on the keyboard (not "any key"),
+//   - a pointerdown OUTSIDE the panel (tap anywhere outside = start),
+//   - the gamepad ✕/Cross button (forwarded via Game.onDismissPressed in App).
+// While it's up the game is paused (App sets game.paused), so stats don't drain.
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { ActiveSource } from './game/input/normalize.js'
+import { isIntroDismissKey } from './game/input/normalize.js'
 import ControlsPanel from './ControlsPanel.jsx'
 
 interface IntroProps {
@@ -12,26 +19,33 @@ interface IntroProps {
 }
 
 export default function Intro({ activeSource, onDismiss }: IntroProps) {
-  // Dismiss on any keyboard/pointer input. Gamepad presses are forwarded from
-  // Game.onInputActivity in App, so no polling is needed here.
+  const cardRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
-    const dismiss = () => onDismiss()
-    window.addEventListener('keydown', dismiss)
-    window.addEventListener('pointerdown', dismiss)
+    const onKey = (e: KeyboardEvent) => {
+      if (isIntroDismissKey(e.key)) onDismiss()
+    }
+    const onPointer = (e: PointerEvent) => {
+      // Clicks/taps inside the panel (tabs, content) must not dismiss it.
+      if (cardRef.current && cardRef.current.contains(e.target as Node)) return
+      onDismiss()
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('pointerdown', onPointer)
     return () => {
-      window.removeEventListener('keydown', dismiss)
-      window.removeEventListener('pointerdown', dismiss)
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('pointerdown', onPointer)
     }
   }, [onDismiss])
 
   return (
     <div className="intro" role="dialog" aria-label="Welcome to fishea">
-      <div className="intro-card">
+      <div className="intro-card" ref={cardRef}>
         <h1 className="intro-title">fishea</h1>
         <p className="intro-pitch">Eat smaller fish. Avoid bigger ones. Survive.</p>
         <ControlsPanel activeSource={activeSource} />
         <button type="button" className="intro-start" onClick={onDismiss} autoFocus>
-          Press any key / click / tap or ✕ to start
+          Press Enter, tap outside, or press ✕ to start
         </button>
       </div>
     </div>

@@ -10,6 +10,7 @@ import {
   stickToLook,
   hasInputActivity,
   mergeInputSources,
+  isIntroDismissKey,
 } from '../normalize.js'
 
 describe('applyDeadzone', () => {
@@ -180,5 +181,19 @@ describe('mergeInputSources', () => {
     const out = mergeInputSources(gpActive, neutralState())
     expect(out.move).not.toBe(gpActive.move)
     expect(out.look).not.toBe(gpActive.look)
+  })
+})
+
+describe('isIntroDismissKey', () => {
+  it('accepts Enter and Space to dismiss the intro', () => {
+    expect(isIntroDismissKey('Enter')).toBe(true)
+    expect(isIntroDismissKey(' ')).toBe(true)
+    expect(isIntroDismissKey('Spacebar')).toBe(true)
+  })
+
+  it('ignores navigation keys so the intro can be browsed', () => {
+    for (const key of ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'Escape', 'a', 'w']) {
+      expect(isIntroDismissKey(key)).toBe(false)
+    }
   })
 })

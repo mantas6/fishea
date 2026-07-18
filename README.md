@@ -34,8 +34,10 @@ it with the **Sound: on/off** button (top-right) or the **M** key.
 
 An intro screen greets you on first load with the pitch and a controls
 reference (Keyboard/Mouse and PS4 tabs — the tab for your active device is
-highlighted). Press any key, click/tap, press a gamepad button, or hit the
-✕ button to dismiss it and start; survival stats stay frozen until you do.
+highlighted). It's browsable: click the tabs or nudge a gamepad stick/d-pad to
+inspect the mappings without losing it. To start, press **Enter**/**Space**,
+tap/click outside the panel, press the gamepad **✕/Cross** button, or hit the
+**Start** button; survival stats stay frozen until you do.
 
 During play a compact hint bar at the bottom shows the controls for the active
 device and quietly fades after ~20s (it reappears when you switch devices or

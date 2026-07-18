@@ -65,17 +65,19 @@ export default function App() {
   }, [])
 
   // Gamepad button presses can't be caught by window key/pointer listeners, so
-  // reuse Game's per-frame input-activity hook to dismiss the intro.
+  // use Game's narrow bite (✕/Cross) rising-edge hook to dismiss the intro.
+  // Stick/d-pad activity still auto-switches the controls tab (via hud events)
+  // without skipping the intro.
   useEffect(() => {
     const game = gameRef.current
     if (!game) return undefined
     if (!introActive) {
-      game.onInputActivity = undefined
+      game.onDismissPressed = undefined
       return undefined
     }
-    game.onInputActivity = () => handleDismissIntro()
+    game.onDismissPressed = () => handleDismissIntro()
     return () => {
-      if (gameRef.current) gameRef.current.onInputActivity = undefined
+      if (gameRef.current) gameRef.current.onDismissPressed = undefined
     }
   }, [introActive, handleDismissIntro])
 

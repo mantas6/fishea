@@ -5,7 +5,6 @@ import { Player } from './Player.js'
 import { computeCameraTarget, dampVector, CAMERA_DEFAULTS } from './camera.js'
 import { InputManager } from './input/index.js'
 import type { ActiveSource, SourceState } from './input/normalize.js'
-import { hasInputActivity } from './input/normalize.js'
 import { EventEmitter } from './events.js'
 import type { DeathCause } from './events.js'
 import { Spawner } from './ai/spawner.js'
@@ -61,8 +60,14 @@ export class Game {
    */
   paused: boolean
   onHudUpdate?: (snapshot: HudSnapshot) => void
-  /** Fired each frame that any input device shows activity (used to dismiss the intro). */
-  onInputActivity?: (source: ActiveSource) => void
+  /**
+   * Fired once on the rising edge of the gamepad ✕/Cross (bite) button. Used to
+   * dismiss the intro overlay from a controller WITHOUT reacting to stick/d-pad
+   * movement (which merely auto-switches the controls tab). Keyboard/mouse
+   * dismissal is handled by the UI layer's own DOM listeners.
+   */
+  onDismissPressed?: () => void
+  private _prevBite: boolean
   private _initialPlayerSize: number
   private _hudTimer: number
   private _hudInterval: number
@@ -114,6 +119,7 @@ export class Game {
     this._hudTimer = 0
     this._hudInterval = 0.1
     this._activeSource = 'keyboard-mouse'
+    this._prevBite = false
 
     // Wire stats reactions to gameplay events; keep unsubscribers for dispose.
     this._unsubs = [
@@ -182,8 +188,13 @@ export class Game {
 
     const input = this.input.update(dt)
     this._activeSource = input.activeSource
-    if (this.onInputActivity && hasInputActivity(input)) {
-      this.onInputActivity(input.activeSource)
+
+    // Dismiss the intro only on the gamepad ✕/Cross (bite) rising edge, so
+    // browsing the controls with the sticks / d-pad doesn't skip it.
+    const bitePressed = input.bite && !this._prevBite
+    this._prevBite = input.bite
+    if (this.onDismissPressed && bitePressed && input.activeSource === 'gamepad') {
+      this.onDismissPressed()
     }
 
     const sprintOk = sprintAllowed(this.stats)
