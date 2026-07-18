@@ -14,7 +14,7 @@ export interface CameraOptions {
 }
 
 export const CAMERA_DEFAULTS: CameraOptions = {
-  distance: 9, // how far behind the fish
+  distance: 13, // how far behind the fish
   height: 3, // how far above the fish
   lookAhead: 4, // how far in front of the fish to aim
   lambda: 4, // smoothing rate (higher = snappier)
