@@ -1,6 +1,9 @@
 import * as THREE from 'three'
 import { createWorld, DEEP_COLOR } from './world.js'
 import type { World } from './world.js'
+import { createWaterFX } from './fx.js'
+import type { WaterFX, BubbleEmitter } from './fx.js'
+import { headingToDirection } from './movement.js'
 import { Player } from './Player.js'
 import {
   computeCameraTarget,
@@ -52,6 +55,7 @@ export class Game {
   scene: THREE.Scene
   camera: THREE.PerspectiveCamera
   world: World
+  fx: WaterFX
   player: Player
   events: EventEmitter
   stats: Stats
@@ -85,6 +89,8 @@ export class Game {
   private _orbit: OrbitState
   private _running: boolean
   private _rafId: number | null
+  // Reused each frame so the sprint bubble-trail emitter never allocates.
+  private _trailEmitter: BubbleEmitter
 
   constructor(container: HTMLElement) {
     if (!container) throw new Error('Game requires a container element')
@@ -111,6 +117,10 @@ export class Game {
     this._initialPlayerSize = 1.6
     this.player = new Player({ size: this._initialPlayerSize })
     this.scene.add(this.player.object3d)
+
+    // Water FX (ambient bubbles, sprint trails, marine snow, light shafts).
+    this.fx = createWaterFX(this.scene)
+    this._trailEmitter = { position: { x: 0, y: 0, z: 0 }, emitting: false }
 
     // Gameplay event bus. Systems (stats HUD, audio) subscribe here.
     // Emitted events: 'fish-spawned', 'fish-despawned', 'fish-eaten',
@@ -239,6 +249,18 @@ export class Game {
     // Fish keep swimming behind the intro, but they won't attack while paused.
     this.spawner.update(dt, { attackPlayer: !this.paused })
     this.world.update(dt)
+
+    // Water FX: recenter the volumetric fields on the player and puff out a
+    // bubble trail from just behind/below the fish while sprinting fast.
+    const p = this.player.position
+    const heading = headingToDirection(this.player.yaw, this.player.pitch)
+    const back = this.player.size * 1.6
+    this._trailEmitter.position.x = p.x - heading.x * back
+    this._trailEmitter.position.y = p.y - heading.y * back - this.player.size * 0.2
+    this._trailEmitter.position.z = p.z - heading.z * back
+    this._trailEmitter.emitting = sprinting
+    this.fx.update(dt, { center: p, emitters: [this._trailEmitter] })
+
     this._updateCamera(dt)
 
     // Throttled HUD refresh.
@@ -343,6 +365,7 @@ export class Game {
     this.input.dispose()
     this.spawner.dispose()
     this.player.dispose()
+    this.fx.dispose()
     this.world.dispose()
 
     this.renderer.dispose()
