@@ -8,7 +8,10 @@ body,
   margin: 0;
   padding: 0;
   width: 100%;
-  height: 100%;
+  height: 100vh;
+  /* Use the dynamic viewport on mobile Safari so full-height layouts track
+     the visible area (excluding the collapsing toolbar). */
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -22,6 +25,7 @@ body {
   position: relative;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
 }
 
 .game-canvas {
@@ -58,7 +62,9 @@ body {
 .hud-stats {
   position: absolute;
   top: 16px;
+  top: calc(16px + env(safe-area-inset-top, 0px));
   left: 16px;
+  left: calc(16px + env(safe-area-inset-left, 0px));
   width: 260px;
   padding: 14px 16px 12px;
   display: flex;
@@ -229,7 +235,9 @@ body {
 .hud-audio {
   position: absolute;
   top: 16px;
+  top: calc(16px + env(safe-area-inset-top, 0px));
   right: 16px;
+  right: calc(16px + env(safe-area-inset-right, 0px));
   display: flex;
   align-items: center;
   gap: 10px;
@@ -500,24 +508,38 @@ body {
 
 .hint-bar {
   position: absolute;
-  bottom: 16px;
+  /* Sit above the home indicator / dynamic toolbar on iPad Safari, and nudge
+     up a little from the very edge for legibility. */
+  bottom: 14px;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   max-width: 92vw;
-  padding: 8px 16px;
+  padding: 9px 18px;
   border-radius: 10px;
   font-size: 12px;
   letter-spacing: 0.02em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: rgba(220, 236, 255, 0.9);
-  background: rgba(4, 16, 34, 0.55);
-  border: 1px solid rgba(120, 200, 255, 0.18);
+  color: rgba(230, 242, 255, 0.96);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+  background: rgba(4, 16, 34, 0.72);
+  border: 1px solid rgba(120, 200, 255, 0.3);
   backdrop-filter: blur(6px);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
-  opacity: 0.85;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  opacity: 0.92;
   transition: opacity 0.6s ease;
+}
+
+/* Touch / coarse pointers (iPad, phones): slightly larger and higher-contrast
+   so the control hints stay readable at arm's length. */
+@media (pointer: coarse) {
+  .hint-bar {
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    font-size: 13px;
+    background: rgba(4, 16, 34, 0.78);
+  }
 }
 
 .hint-bar.is-hidden {
