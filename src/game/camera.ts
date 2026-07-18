@@ -90,24 +90,20 @@ export interface OrbitOffset {
 
 const ZERO_ORBIT_OFFSET: OrbitOffset = { yaw: 0, pitch: 0 }
 
-/** Full orbit state: the current offsets plus mode-latch bookkeeping. */
+/** Full orbit state: the current offsets plus the mode flag. */
 export interface OrbitState {
   /** Accumulated yaw offset from the fish heading (wrapped to (-π, π]). */
   yaw: number
   /** Accumulated pitch offset from the fish heading (clamped ±pitchClamp). */
   pitch: number
-  /** Whether the camera is currently in orbit mode. */
+  /** Whether the camera is currently in orbit mode (idle look). */
   orbiting: boolean
-  /** Seconds spent below the movement epsilon (drives the enter-orbit latch). */
-  idleTime: number
 }
 
 /** Tuning for the idle-orbit behavior. */
 export interface OrbitOptions {
-  /** Movement magnitude below this counts as "not moving". */
+  /** Movement magnitude at/below this counts as "not moving" (orbit). */
   moveEpsilon: number
-  /** Time (s) below moveEpsilon before switching INTO orbit mode. */
-  enterDelay: number
   /** Max absolute orbit pitch offset (radians). */
   pitchClamp: number
   /** Exp-damp rate at which offsets decay back to zero in follow mode. */
@@ -116,14 +112,13 @@ export interface OrbitOptions {
 
 export const ORBIT_DEFAULTS: OrbitOptions = {
   moveEpsilon: 0.05,
-  enterDelay: 0.15,
   pitchClamp: 1.2,
   decayLambda: 4,
 }
 
 /** A fresh, neutral orbit state (follow mode, no offset). */
 export function createOrbitState(): OrbitState {
-  return { yaw: 0, pitch: 0, orbiting: false, idleTime: 0 }
+  return { yaw: 0, pitch: 0, orbiting: false }
 }
 
 /**
@@ -133,10 +128,17 @@ export function createOrbitState(): OrbitState {
  *  - `look` is the per-frame look delta (radians) — the SAME value that would
  *    otherwise steer the fish.
  *
- * Decision: movement above `moveEpsilon` is follow mode (instant). Movement
- * below it enters orbit mode only after `enterDelay` seconds so brief input
- * gaps don't flip modes. While orbiting, look accumulates into the offsets and
- * does NOT steer the fish; in follow mode the offsets decay back to zero.
+ * Decision: any movement input (above `moveEpsilon`) is follow mode; no
+ * movement input is orbit mode. The switch is instant in BOTH directions so the
+ * moment the player stops swimming, look immediately orbits the camera instead
+ * of steering the fish (and the moment they move again, steering resumes). A
+ * time-based enter delay is deliberately avoided: during such a delay look
+ * would keep steering the stationary fish, which is exactly the behavior this
+ * feature must prevent.
+ *
+ * While orbiting, look accumulates into the offsets (yaw wraps, pitch clamps)
+ * and does NOT steer the fish; in follow mode the offsets decay back to zero so
+ * the camera glides smoothly behind the fish again.
  */
 export function updateOrbitState(
   state: OrbitState,
@@ -145,14 +147,8 @@ export function updateOrbitState(
   dt: number,
   opts: OrbitOptions = ORBIT_DEFAULTS,
 ): OrbitState {
-  const moving = moveMag > opts.moveEpsilon
-
-  // Idle latch: reset the moment we move; accumulate otherwise.
-  const idleTime = moving ? 0 : state.idleTime + dt
-
-  // Exit to follow instantly on movement; enter orbit only after the delay
-  // (and stay latched in orbit until movement resumes).
-  const orbiting = moving ? false : state.orbiting || idleTime >= opts.enterDelay
+  // No movement input => orbit the stationary fish; any movement => follow.
+  const orbiting = moveMag <= opts.moveEpsilon
 
   let yaw = state.yaw
   let pitch = state.pitch
@@ -167,5 +163,5 @@ export function updateOrbitState(
     pitch = pitch * f
   }
 
-  return { yaw, pitch, orbiting, idleTime }
+  return { yaw, pitch, orbiting }
 }

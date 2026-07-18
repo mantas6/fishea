@@ -96,7 +96,7 @@ describe('computeCameraTarget', () => {
 
 const noLook = { x: 0, y: 0 }
 
-describe('updateOrbitState — mode decision + latch', () => {
+describe('updateOrbitState — mode decision', () => {
   it('starts in follow mode', () => {
     expect(createOrbitState().orbiting).toBe(false)
   })
@@ -105,33 +105,30 @@ describe('updateOrbitState — mode decision + latch', () => {
     let s = createOrbitState()
     s = updateOrbitState(s, 1, noLook, 0.1)
     expect(s.orbiting).toBe(false)
-    expect(s.idleTime).toBe(0)
   })
 
-  it('input right at the epsilon does not enter orbit', () => {
+  it('enters orbit on the very first idle frame (no enter delay)', () => {
+    // The instant movement input drops away, look must orbit the camera rather
+    // than steer the fish — there is no grace window where look still steers.
     let s = createOrbitState()
-    // moveMag === moveEpsilon is NOT strictly above => treated as idle, but the
-    // latch delay still gates entry. A single tiny frame stays in follow.
-    s = updateOrbitState(s, ORBIT_DEFAULTS.moveEpsilon, noLook, 0.05)
-    expect(s.orbiting).toBe(false)
-  })
-
-  it('waits the enter delay before switching into orbit mode', () => {
-    let s = createOrbitState()
-    // Below epsilon but not yet past the delay.
-    s = updateOrbitState(s, 0, noLook, 0.1)
-    expect(s.orbiting).toBe(false)
-    // Crossing the delay flips into orbit.
-    s = updateOrbitState(s, 0, noLook, 0.1)
+    s = updateOrbitState(s, 0, noLook, 1 / 60)
     expect(s.orbiting).toBe(true)
   })
 
-  it('a brief input gap shorter than the delay does not flip modes', () => {
+  it('treats input at/below the epsilon as idle (orbit)', () => {
     let s = createOrbitState()
-    s = updateOrbitState(s, 0, noLook, 0.1) // idle 0.10s (< 0.15)
-    s = updateOrbitState(s, 1, noLook, 0.016) // moved again
-    expect(s.orbiting).toBe(false)
-    expect(s.idleTime).toBe(0)
+    s = updateOrbitState(s, ORBIT_DEFAULTS.moveEpsilon, noLook, 1 / 60)
+    expect(s.orbiting).toBe(true)
+  })
+
+  it('accumulates look into the offset from the first idle frame', () => {
+    // A look delta on the same frame the player goes idle must move the camera,
+    // never the fish (Game.ts zeroes the fish look while orbiting).
+    let s = createOrbitState()
+    s = updateOrbitState(s, 0, { x: 0.2, y: 0.1 }, 1 / 60)
+    expect(s.orbiting).toBe(true)
+    expect(s.yaw).toBeCloseTo(0.2)
+    expect(s.pitch).toBeCloseTo(0.1)
   })
 
   it('exits orbit instantly when movement resumes', () => {
