@@ -4,13 +4,15 @@ import type { Vec3, WorldBounds } from '../movement.js'
 import { AIFish } from './AIFish.js'
 import {
   AI_CONFIG,
+  TRAIT_CONFIG,
   makeRng,
+  rollFishTraits,
   canEat,
   inEatRange,
   resolveEat,
   scanBiteTargets,
 } from './behavior.js'
-import type { AiConfig, FishDescriptor, Rng } from './behavior.js'
+import type { AiConfig, FishDescriptor, Rng, TraitConfig } from './behavior.js'
 import type { FishMesh } from '../fish/FishMesh.js'
 import type { EventEmitter } from '../events.js'
 
@@ -54,6 +56,7 @@ export interface SpawnerOptions {
   rng?: Rng
   config?: SpawnConfig
   aiConfig?: AiConfig
+  traitConfig?: TraitConfig
   bounds?: WorldBounds
 }
 
@@ -99,6 +102,7 @@ export class Spawner {
   rng: Rng
   config: SpawnConfig
   aiConfig: AiConfig
+  traitConfig: TraitConfig
   bounds: WorldBounds
   fish: AIFish[]
   private _timer: number
@@ -112,6 +116,7 @@ export class Spawner {
     this.rng = options.rng ?? makeRng((Math.random() * 0xffffffff) >>> 0)
     this.config = options.config ?? SPAWN_CONFIG
     this.aiConfig = options.aiConfig ?? AI_CONFIG
+    this.traitConfig = options.traitConfig ?? TRAIT_CONFIG
     this.bounds = options.bounds ?? WORLD
 
     this.fish = []
@@ -156,12 +161,16 @@ export class Spawner {
       maxDist,
     )
     const color = FISH_COLORS[Math.floor(this.rng() * FISH_COLORS.length)]
+    // Roll agility traits from the spawner RNG so the mix is reproducible.
+    // Guaranteed-eatable prey lean sluggish so hungry players get easy catches.
+    const traits = rollFishTraits(this.rng, this.traitConfig, { eatable: opts.eatable })
     const fish = new AIFish({
       position,
       size,
       color,
       rng: makeRng((this.rng() * 0xffffffff) >>> 0),
       config: this.aiConfig,
+      traits,
     })
     this.fish.push(fish)
     if (this.scene) this.scene.add(fish.object3d)

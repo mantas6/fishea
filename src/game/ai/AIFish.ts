@@ -7,6 +7,8 @@ import { dampOrientation } from '../orient.js'
 import {
   AI_CONFIG,
   makeRng,
+  rollFishTraits,
+  applyTraits,
   nearestThreat,
   nearestPrey,
   fleeDirection,
@@ -14,7 +16,7 @@ import {
   wanderStep,
   vnorm,
 } from './behavior.js'
-import type { AiConfig, BehaviorMode, FishDescriptor, Rng } from './behavior.js'
+import type { AiConfig, BehaviorMode, FishDescriptor, FishTraits, Rng } from './behavior.js'
 
 export interface AIFishOptions {
   position?: Vec3
@@ -24,6 +26,8 @@ export interface AIFishOptions {
   bellyColor?: number
   rng?: Rng
   config?: AiConfig
+  /** Per-fish speed/agility variation. Rolled from `rng` when omitted. */
+  traits?: FishTraits
 }
 
 // An AI fish entity: gameplay state (plain numbers so behavior.js stays pure)
@@ -43,6 +47,7 @@ let _idCounter = 0
 export class AIFish implements FishDescriptor {
   id: string
   config: AiConfig
+  traits: FishTraits
   size: number
   color: number
   isPlayer: boolean
@@ -54,12 +59,18 @@ export class AIFish implements FishDescriptor {
   object3d: THREE.Group
   fish: FishMesh
   private _rng: Rng
+  // Base config folded with this fish's traits; drives perception + movement.
+  private _config: AiConfig
   private _align: THREE.Group
 
   constructor(options: AIFishOptions = {}) {
     this.id = `ai-${_idCounter++}`
     this.config = options.config ?? AI_CONFIG
     this._rng = options.rng ?? makeRng((Math.random() * 0xffffffff) >>> 0)
+    // Traits come from the spawner (so it can bias eatable prey sluggish) or are
+    // rolled here for standalone fish. Fold them into an effective config once.
+    this.traits = options.traits ?? rollFishTraits(this._rng)
+    this._config = applyTraits(this.config, this.traits)
 
     this.size = options.size ?? 1
     this.color = options.color ?? 0xff8c42
@@ -118,20 +129,23 @@ export class AIFish implements FishDescriptor {
     let targetDir: Vec3
     let speed: number
 
-    const threat = nearestThreat(self, neighbors, this.config)
+    // Use the trait-folded config so sluggish fish are slower, turn lazily and
+    // notice threats later than ordinary fish.
+    const cfg = this._config
+    const threat = nearestThreat(self, neighbors, cfg)
     if (threat) {
       targetDir = fleeDirection(this.position, threat.position)
-      speed = this.config.burstSpeed
+      speed = cfg.burstSpeed
       this.mode = 'flee'
     } else {
-      const prey = nearestPrey(self, neighbors, this.config)
+      const prey = nearestPrey(self, neighbors, cfg)
       if (prey) {
         targetDir = chaseDirection(this.position, prey.position)
-        speed = this.config.chaseSpeed
+        speed = cfg.chaseSpeed
         this.mode = 'chase'
       } else {
-        targetDir = wanderStep(this.heading, this._rng, dt, this.config)
-        speed = this.config.cruiseSpeed
+        targetDir = wanderStep(this.heading, this._rng, dt, cfg)
+        speed = cfg.cruiseSpeed
         this.mode = 'wander'
       }
     }
@@ -139,7 +153,7 @@ export class AIFish implements FishDescriptor {
     // Cap how fast the heading can swing so abrupt target changes (e.g. a new
     // threat / mode flip) don't snap the fish around. Both movement and the
     // mesh orientation follow this smoothed heading, so they stay consistent.
-    this.heading = limitTurn(this.heading, targetDir, this.config.turnRate * dt)
+    this.heading = limitTurn(this.heading, targetDir, cfg.turnRate * dt)
 
     const dir = this.heading
     this.velocity = { x: dir.x * speed, y: dir.y * speed, z: dir.z * speed }

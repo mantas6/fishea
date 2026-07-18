@@ -186,6 +186,51 @@ describe('Spawner eatable floor', () => {
   })
 })
 
+describe('Spawner sluggish traits', () => {
+  function makePlayer(size: number): SpawnerPlayer {
+    return { position: { x: 0, y: 20, z: 0 }, size, yaw: 0, pitch: 0, bite: false }
+  }
+
+  it('tags every spawned fish with agility traits', () => {
+    const spawner = new Spawner({ scene: null, player: makePlayer(1.6), rng: makeRng(1) })
+    spawner.seed()
+    for (const f of spawner.fish) {
+      expect(f.traits).toBeDefined()
+      expect(typeof f.traits.sluggish).toBe('boolean')
+      // Sluggish fish are slower; ordinary fish keep full speed.
+      if (f.traits.sluggish) expect(f.traits.speedMult).toBeLessThan(1)
+      else expect(f.traits.speedMult).toBe(1)
+    }
+    spawner.dispose()
+  })
+
+  it('produces a meaningful fraction of sluggish, easy-to-catch fish', () => {
+    const spawner = new Spawner({ scene: null, player: makePlayer(1.6), rng: makeRng(4242) })
+    spawner.seed()
+    const sluggish = spawner.fish.filter((f) => f.traits.sluggish).length
+    expect(sluggish).toBeGreaterThan(0)
+    expect(sluggish).toBeLessThan(spawner.fish.length)
+    spawner.dispose()
+  })
+
+  it('leans guaranteed-eatable prey sluggish so hungry players get catchable targets', () => {
+    // Exercise the guaranteed-eatable spawn path directly and check the mix.
+    const spawner = new Spawner({ scene: null, player: makePlayer(1.6), rng: makeRng(2) })
+    let sluggish = 0
+    let total = 0
+    while (spawner.spawnOne({ eatable: true })) total++
+    for (const f of spawner.fish) {
+      // Every guaranteed-eatable fish must actually be eatable by the player.
+      expect(canEat({ size: spawner.player.size }, f, spawner.aiConfig)).toBe(true)
+      if (f.traits.sluggish) sluggish++
+    }
+    expect(total).toBeGreaterThan(0)
+    // With the elevated eatable sluggish chance most eatable prey are sluggish.
+    expect(sluggish / total).toBeGreaterThan(0.4)
+    spawner.dispose()
+  })
+})
+
 describe('shouldDespawn', () => {
   it('recycles fish beyond the despawn distance', () => {
     const player = { x: 0, y: 20, z: 0 }

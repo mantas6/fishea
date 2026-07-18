@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import {
   AI_CONFIG,
+  TRAIT_CONFIG,
+  DEFAULT_TRAITS,
   makeRng,
+  rollFishTraits,
+  applyTraits,
   classifyNeighbor,
   perceive,
   nearestThreat,
@@ -221,6 +225,100 @@ describe('resolveEat', () => {
   it('never exceeds the cap even for a huge prey', () => {
     const { newSize } = resolveEat({ size: AI_CONFIG.maxSize }, { size: 100 }, AI_CONFIG)
     expect(newSize).toBe(AI_CONFIG.maxSize)
+  })
+})
+
+describe('rollFishTraits', () => {
+  it('is deterministic for a fixed seed', () => {
+    const a = makeRng(99)
+    const b = makeRng(99)
+    for (let i = 0; i < 100; i++) {
+      expect(rollFishTraits(a, TRAIT_CONFIG)).toEqual(rollFishTraits(b, TRAIT_CONFIG))
+    }
+  })
+
+  it('rolls roughly the configured fraction of sluggish fish', () => {
+    const rng = makeRng(2024)
+    let sluggish = 0
+    const N = 10000
+    for (let i = 0; i < N; i++) if (rollFishTraits(rng, TRAIT_CONFIG).sluggish) sluggish++
+    expect(sluggish / N).toBeCloseTo(TRAIT_CONFIG.sluggishChance, 1)
+  })
+
+  it('biases guaranteed-eatable prey more sluggish than ordinary fish', () => {
+    const rng = makeRng(7)
+    let ordinary = 0
+    let eatable = 0
+    const N = 10000
+    for (let i = 0; i < N; i++) if (rollFishTraits(rng, TRAIT_CONFIG).sluggish) ordinary++
+    for (let i = 0; i < N; i++)
+      if (rollFishTraits(rng, TRAIT_CONFIG, { eatable: true }).sluggish) eatable++
+    expect(eatable).toBeGreaterThan(ordinary)
+    expect(eatable / N).toBeCloseTo(TRAIT_CONFIG.eatableSluggishChance, 1)
+  })
+
+  it('ordinary fish carry no modifiers; sluggish fish are slower and less agile', () => {
+    const rng = makeRng(1)
+    for (let i = 0; i < 500; i++) {
+      const t = rollFishTraits(rng, TRAIT_CONFIG)
+      if (t.sluggish) {
+        expect(t.speedMult).toBeGreaterThanOrEqual(TRAIT_CONFIG.sluggishSpeed[0])
+        expect(t.speedMult).toBeLessThanOrEqual(TRAIT_CONFIG.sluggishSpeed[1])
+        expect(t.speedMult).toBeLessThan(1)
+        expect(t.turnMult).toBeLessThan(1)
+        expect(t.senseMult).toBeLessThan(1)
+        expect(t.wanderMult).toBeLessThan(1)
+      } else {
+        expect(t).toEqual(DEFAULT_TRAITS)
+      }
+    }
+  })
+
+  it('always makes fish sluggish when the chance is 1', () => {
+    const rng = makeRng(3)
+    const cfg = { ...TRAIT_CONFIG, sluggishChance: 1 }
+    for (let i = 0; i < 100; i++) expect(rollFishTraits(rng, cfg).sluggish).toBe(true)
+  })
+})
+
+describe('applyTraits', () => {
+  it('leaves the base config untouched for default traits', () => {
+    const cfg = applyTraits(AI_CONFIG, DEFAULT_TRAITS)
+    expect(cfg).toEqual(AI_CONFIG)
+    expect(cfg).not.toBe(AI_CONFIG) // returns a fresh object
+  })
+
+  it('scales flee (burst) speed and other movement fields by the traits', () => {
+    const traits = {
+      sluggish: true,
+      speedMult: 0.5,
+      turnMult: 0.6,
+      senseMult: 0.6,
+      wanderMult: 0.55,
+    }
+    const cfg = applyTraits(AI_CONFIG, traits)
+    // Flee-speed math: a sluggish fish bursts at half the normal panic speed.
+    expect(cfg.burstSpeed).toBeCloseTo(AI_CONFIG.burstSpeed * 0.5)
+    expect(cfg.chaseSpeed).toBeCloseTo(AI_CONFIG.chaseSpeed * 0.5)
+    expect(cfg.cruiseSpeed).toBeCloseTo(AI_CONFIG.cruiseSpeed * 0.5)
+    expect(cfg.turnRate).toBeCloseTo(AI_CONFIG.turnRate * 0.6)
+    expect(cfg.senseRadius).toBeCloseTo(AI_CONFIG.senseRadius * 0.6)
+    expect(cfg.wanderRate).toBeCloseTo(AI_CONFIG.wanderRate * 0.55)
+  })
+
+  it('does not change eating / classification fields', () => {
+    const traits = {
+      sluggish: true,
+      speedMult: 0.5,
+      turnMult: 0.6,
+      senseMult: 0.6,
+      wanderMult: 0.55,
+    }
+    const cfg = applyTraits(AI_CONFIG, traits)
+    expect(cfg.eatRangeBase).toBe(AI_CONFIG.eatRangeBase)
+    expect(cfg.preyRatio).toBe(AI_CONFIG.preyRatio)
+    expect(cfg.threatRatio).toBe(AI_CONFIG.threatRatio)
+    expect(cfg.aggroRadius).toBe(AI_CONFIG.aggroRadius)
   })
 })
 

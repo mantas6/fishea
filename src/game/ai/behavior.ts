@@ -34,6 +34,40 @@ export interface AiConfig {
 /** A pseudo-random number generator returning a float in [0, 1). */
 export type Rng = () => number
 
+/**
+ * Per-fish variation rolled at spawn. A "sluggish" fish swims and turns slower,
+ * reacts to threats later (shorter flee-detection radius) and wanders more
+ * lazily, so it reads as an easy target the player can learn to spot. All
+ * multipliers are 1 for an ordinary (non-sluggish) fish.
+ */
+export interface FishTraits {
+  sluggish: boolean
+  /** Multiplies cruise / chase / burst speeds. */
+  speedMult: number
+  /** Multiplies the max turn rate (agility). */
+  turnMult: number
+  /** Multiplies the flee-detection (sense) radius so sluggish fish react late. */
+  senseMult: number
+  /** Multiplies the wander jitter rate so sluggish fish meander lazily. */
+  wanderMult: number
+}
+
+/** Tuning for how per-fish traits are rolled. */
+export interface TraitConfig {
+  /** Fraction of ordinary fish rolled as sluggish. */
+  sluggishChance: number
+  /** Elevated sluggish chance for guaranteed-eatable prey (hungry-player help). */
+  eatableSluggishChance: number
+  /** [min, max] speed multiplier for a sluggish fish. */
+  sluggishSpeed: [number, number]
+  /** Turn-rate multiplier for a sluggish fish. */
+  sluggishTurn: number
+  /** Sense-radius multiplier for a sluggish fish (reacts late). */
+  sluggishSense: number
+  /** Wander-rate multiplier for a sluggish fish (lazier meandering). */
+  sluggishWander: number
+}
+
 /** Neighbour classification relative to a fish's own size. */
 export type NeighborKind = 'threat' | 'prey' | 'neutral'
 
@@ -63,6 +97,24 @@ export const AI_CONFIG: AiConfig = {
   eatRangeBase: 2.0, // eat range = eatRangeBase * eater.size
   growthFraction: 0.25, // eater grows by this fraction of the prey's size
   maxSize: 6, // hard cap on how big a fish can grow
+}
+
+export const TRAIT_CONFIG: TraitConfig = {
+  sluggishChance: 0.35, // ~35% of ordinary fish are sluggish
+  eatableSluggishChance: 0.6, // guaranteed-eatable prey lean sluggish so hunts land
+  sluggishSpeed: [0.5, 0.7], // 50-70% of normal speed
+  sluggishTurn: 0.6, // turns 40% slower (harder to shake, easier to corner)
+  sluggishSense: 0.6, // 60% flee-detection radius => reacts late
+  sluggishWander: 0.55, // meanders lazily
+}
+
+/** Traits for an ordinary (non-sluggish) fish: no modifiers. */
+export const DEFAULT_TRAITS: FishTraits = {
+  sluggish: false,
+  speedMult: 1,
+  turnMult: 1,
+  senseMult: 1,
+  wanderMult: 1,
 }
 
 // --- Tiny vector helpers (plain objects, no allocation-heavy chains) ------
@@ -110,6 +162,49 @@ export function makeRng(seed = 1): Rng {
     let t = Math.imul(a ^ (a >>> 15), 1 | a)
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+// --- Per-fish traits ------------------------------------------------------
+
+/**
+ * Roll per-fish traits at spawn. Pure — advances the given RNG so trait rolls
+ * are reproducible in tests. A fraction of fish (see TraitConfig.sluggishChance,
+ * or the elevated eatableSluggishChance when `eatable` is set) come out sluggish
+ * with reduced speed / turn rate / sense radius / wander rate.
+ */
+export function rollFishTraits(
+  rng: Rng,
+  config: TraitConfig = TRAIT_CONFIG,
+  opts: { eatable?: boolean } = {},
+): FishTraits {
+  const chance = opts.eatable ? config.eatableSluggishChance : config.sluggishChance
+  if (rng() >= chance) return { ...DEFAULT_TRAITS }
+  const [lo, hi] = config.sluggishSpeed
+  const speedMult = lo + rng() * (hi - lo)
+  return {
+    sluggish: true,
+    speedMult,
+    turnMult: config.sluggishTurn,
+    senseMult: config.sluggishSense,
+    wanderMult: config.sluggishWander,
+  }
+}
+
+/**
+ * Fold a fish's traits into a base config, producing the effective config that
+ * drives that fish's perception and movement. Pure — returns a new config and
+ * leaves the base untouched, so every fish can share one immutable base.
+ */
+export function applyTraits(config: AiConfig, traits: FishTraits): AiConfig {
+  return {
+    ...config,
+    senseRadius: config.senseRadius * traits.senseMult,
+    turnRate: config.turnRate * traits.turnMult,
+    wanderRate: config.wanderRate * traits.wanderMult,
+    cruiseSpeed: config.cruiseSpeed * traits.speedMult,
+    chaseSpeed: config.chaseSpeed * traits.speedMult,
+    burstSpeed: config.burstSpeed * traits.speedMult,
   }
 }
 
