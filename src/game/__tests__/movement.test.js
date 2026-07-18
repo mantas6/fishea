@@ -2,12 +2,17 @@ import { describe, it, expect } from 'vitest'
 import {
   WORLD,
   MAX_PITCH,
+  PLAYER_MOTION,
   clampPitch,
   wrapAngle,
   headingToDirection,
   integrate,
   clampToBounds,
   isWithinBounds,
+  rightFromYaw,
+  approach,
+  stepVelocity,
+  desiredVelocity,
 } from '../movement.js'
 
 describe('clampPitch', () => {
@@ -105,5 +110,74 @@ describe('isWithinBounds', () => {
     expect(isWithinBounds({ x: 0, y: 20, z: 0 })).toBe(true)
     expect(isWithinBounds({ x: 0, y: 0, z: 0 })).toBe(false) // below floor margin
     expect(isWithinBounds({ x: 500, y: 20, z: 0 })).toBe(false) // outside radius
+  })
+})
+
+describe('rightFromYaw', () => {
+  it('points +X when facing -Z (yaw 0)', () => {
+    const r = rightFromYaw(0)
+    expect(r.x).toBeCloseTo(1)
+    expect(r.z).toBeCloseTo(0)
+  })
+
+  it('is perpendicular to the horizontal heading', () => {
+    for (const yaw of [0.3, 1.1, -2.0]) {
+      const d = headingToDirection(yaw, 0)
+      const r = rightFromYaw(yaw)
+      expect(d.x * r.x + d.z * r.z).toBeCloseTo(0)
+      expect(Math.hypot(r.x, r.z)).toBeCloseTo(1)
+    }
+  })
+})
+
+describe('approach', () => {
+  it('returns current when dt is 0', () => {
+    expect(approach(3, 10, 4, 0)).toBeCloseTo(3)
+  })
+
+  it('converges to the target with large dt', () => {
+    expect(approach(0, 10, 4, 100)).toBeCloseTo(10)
+  })
+})
+
+describe('stepVelocity', () => {
+  it('ramps toward a nonzero desired velocity', () => {
+    const v = stepVelocity({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 8 }, PLAYER_MOTION, 0.1)
+    expect(v.z).toBeGreaterThan(0)
+    expect(v.z).toBeLessThan(8)
+  })
+
+  it('bleeds velocity toward zero (drag) when idle', () => {
+    const v = stepVelocity({ x: 0, y: 0, z: 8 }, { x: 0, y: 0, z: 0 }, PLAYER_MOTION, 0.1)
+    expect(v.z).toBeGreaterThan(0)
+    expect(v.z).toBeLessThan(8)
+    // Eventually settles at rest.
+    expect(stepVelocity({ x: 0, y: 0, z: 8 }, { x: 0, y: 0, z: 0 }, PLAYER_MOTION, 100).z).toBeCloseTo(0)
+  })
+})
+
+describe('desiredVelocity', () => {
+  it('forward thrust (move.z) follows the heading', () => {
+    const v = desiredVelocity({ x: 0, y: 0, z: 1 }, 0, 0, 8)
+    // yaw/pitch 0 => heading -Z
+    expect(v.z).toBeCloseTo(-8)
+    expect(v.x).toBeCloseTo(0)
+    expect(v.y).toBeCloseTo(0)
+  })
+
+  it('strafe (move.x) follows the right vector', () => {
+    const v = desiredVelocity({ x: 1, y: 0, z: 0 }, 0, 0, 8)
+    expect(v.x).toBeCloseTo(8) // right is +X at yaw 0
+    expect(v.z).toBeCloseTo(0)
+  })
+
+  it('vertical (move.y) adds pure Y thrust', () => {
+    const v = desiredVelocity({ x: 0, y: 1, z: 0 }, 0, 0, 8)
+    expect(v.y).toBeCloseTo(8)
+  })
+
+  it('pitched-up forward thrust gains a +Y component', () => {
+    const v = desiredVelocity({ x: 0, y: 0, z: 1 }, 0, 0.5, 8)
+    expect(v.y).toBeGreaterThan(0)
   })
 })

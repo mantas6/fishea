@@ -14,6 +14,14 @@ export const WORLD = {
 // Fish cannot pitch straight up/down — keeps orientation math sane.
 export const MAX_PITCH = 1.2 // radians (~69 degrees)
 
+// Tuning for the player's velocity model (thrust + water drag).
+export const PLAYER_MOTION = {
+  maxSpeed: 8, // base cruise speed (units/s)
+  sprintMultiplier: 1.8, // sprint multiplies max speed
+  accelLambda: 4, // how quickly velocity ramps toward the desired velocity
+  dragLambda: 1.6, // how quickly velocity bleeds off when there's no input
+}
+
 /**
  * Clamp a pitch angle (radians) to the allowed range.
  * @param {number} pitch
@@ -52,6 +60,69 @@ export function headingToDirection(yaw, pitch) {
     x: -Math.sin(yaw) * cosPitch,
     y: Math.sin(pitch),
     z: -Math.cos(yaw) * cosPitch,
+  }
+}
+
+/**
+ * Horizontal "right" (strafe) unit vector for a given yaw.
+ * At yaw 0 the fish faces -Z, so its right is +X.
+ * @param {number} yaw
+ * @returns {{x:number,z:number}}
+ */
+export function rightFromYaw(yaw) {
+  return { x: Math.cos(yaw), z: -Math.sin(yaw) }
+}
+
+/**
+ * Frame-rate independent exponential approach of a scalar toward a target.
+ * @param {number} current
+ * @param {number} target
+ * @param {number} lambda higher = faster
+ * @param {number} dt
+ * @returns {number}
+ */
+export function approach(current, target, lambda, dt) {
+  return target + (current - target) * Math.exp(-lambda * dt)
+}
+
+/**
+ * Step a velocity toward a desired velocity. Uses a faster rate while there's
+ * input (thrust) and a slower rate when the desired velocity is zero (water
+ * drag). Pure — returns a new object.
+ * @param {{x:number,y:number,z:number}} velocity
+ * @param {{x:number,y:number,z:number}} desired
+ * @param {typeof PLAYER_MOTION} [opts]
+ * @param {number} dt
+ * @returns {{x:number,y:number,z:number}}
+ */
+export function stepVelocity(velocity, desired, opts = PLAYER_MOTION, dt = 0) {
+  const moving = desired.x !== 0 || desired.y !== 0 || desired.z !== 0
+  const lambda = moving ? opts.accelLambda : opts.dragLambda
+  return {
+    x: approach(velocity.x, desired.x, lambda, dt),
+    y: approach(velocity.y, desired.y, lambda, dt),
+    z: approach(velocity.z, desired.z, lambda, dt),
+  }
+}
+
+/**
+ * Build the desired velocity from a normalized move vector and orientation.
+ *  - move.z drives forward thrust along the full heading (includes pitch).
+ *  - move.x strafes along the horizontal right vector.
+ *  - move.y adds pure vertical thrust.
+ * @param {{x:number,y:number,z:number}} move
+ * @param {number} yaw
+ * @param {number} pitch
+ * @param {number} maxSpeed
+ * @returns {{x:number,y:number,z:number}}
+ */
+export function desiredVelocity(move, yaw, pitch, maxSpeed) {
+  const dir = headingToDirection(yaw, pitch)
+  const right = rightFromYaw(yaw)
+  return {
+    x: (dir.x * move.z + right.x * move.x) * maxSpeed,
+    y: (dir.y * move.z + move.y) * maxSpeed,
+    z: (dir.z * move.z + right.z * move.x) * maxSpeed,
   }
 }
 

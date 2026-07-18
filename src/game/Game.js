@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { createWorld, DEEP_COLOR } from './world.js'
 import { Player } from './Player.js'
 import { computeCameraTarget, dampVector, CAMERA_DEFAULTS } from './camera.js'
+import { InputManager } from './input/index.js'
 
 // Owns the Three.js renderer, scene, camera, clock, and the RAF loop.
 // All WebGL/DOM work lives here so the pure modules stay test-friendly.
@@ -34,6 +35,9 @@ export class Game {
     this.world = createWorld(this.scene)
     this.player = new Player({ size: 1.6 })
     this.scene.add(this.player.object3d)
+
+    // Input: keyboard/mouse + gamepad, merged into one state each frame.
+    this.input = new InputManager(this.renderer.domElement)
 
     // Smoothed camera state.
     this._camPos = { x: this.camera.position.x, y: this.camera.position.y, z: this.camera.position.z }
@@ -69,7 +73,8 @@ export class Game {
     if (!this._running) return
     const dt = Math.min(this.clock.getDelta(), 0.1) // clamp big frame gaps
 
-    this.player.update(dt)
+    const input = this.input.update(dt)
+    this.player.applyInput(input, dt)
     this.world.update(dt)
     this._updateCamera(dt)
 
@@ -103,6 +108,7 @@ export class Game {
     this.stop()
     window.removeEventListener('resize', this._onResize)
 
+    this.input.dispose()
     this.player.dispose()
     this.world.dispose()
 

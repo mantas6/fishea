@@ -6,11 +6,31 @@ A third-person 3D fish survival game built with React, Three.js and Vite.
 
 ## Controls
 
-_Placeholder — controls will be documented as the game develops._
+A connected controller takes priority automatically whenever it's in use;
+otherwise keyboard + mouse are active. The HUD device indicator follows the
+last-used input.
 
-- Move: TBD
-- Look: TBD
-- Action: TBD
+### Keyboard & mouse
+
+| Action    | Input                              |
+| --------- | ---------------------------------- |
+| Swim      | `W` `A` `S` `D` / arrow keys       |
+| Look      | Mouse (click the canvas to lock)   |
+| Swim up   | `Space`                            |
+| Swim down | `Ctrl` or `C`                      |
+| Sprint    | `Shift` (hold)                     |
+| Bite/eat  | Left mouse button                  |
+
+### PS4 / DualShock controller
+
+| Action    | Input                              |
+| --------- | ---------------------------------- |
+| Swim      | Left stick                         |
+| Look      | Right stick                        |
+| Swim up   | `R1` (or D-pad up)                 |
+| Swim down | `L2` (or D-pad down)               |
+| Sprint    | `L1` (or `R2`)                     |
+| Bite/eat  | `✕` Cross (or `▢` Square)          |
 
 ## Development
 

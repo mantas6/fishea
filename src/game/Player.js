@@ -2,24 +2,28 @@ import * as THREE from 'three'
 import { FishMesh } from './fish/FishMesh.js'
 import {
   WORLD,
+  PLAYER_MOTION,
   headingToDirection,
   integrate,
   clampToBounds,
   clampPitch,
   wrapAngle,
+  desiredVelocity,
+  stepVelocity,
 } from './movement.js'
 
 // The player fish entity: owns gameplay state (position/velocity/heading/size)
-// and a Three.js container object for rendering. Real input arrives in a later
-// task; for now it gently auto-swims in a lazy arc with idle bobbing.
+// and a Three.js container object for rendering. Motion is driven by the
+// normalized input state produced by the InputManager (see applyInput).
 
 export class Player {
   /**
-   * @param {Partial<{size:number,color:number,speed:number}>} [options]
+   * @param {Partial<{size:number,color:number,speed:number,sprintMultiplier:number}>} [options]
    */
   constructor(options = {}) {
     this.size = options.size ?? 1
-    this.speed = options.speed ?? 6 // forward units/s for the placeholder swim
+    this.speed = options.speed ?? PLAYER_MOTION.maxSpeed // base cruise speed (units/s)
+    this.sprintMultiplier = options.sprintMultiplier ?? PLAYER_MOTION.sprintMultiplier
     this.color = options.color ?? 0x4fd1ff
 
     // Gameplay state (plain numbers so movement.js stays pure).
@@ -27,6 +31,10 @@ export class Player {
     this.velocity = { x: 0, y: 0, z: 0 }
     this.yaw = 0 // faces -Z at 0
     this.pitch = 0
+
+    // Latest input flags (bite is consumed by a later task).
+    this.bite = false
+    this.sprinting = false
 
     this._t = 0
 
@@ -52,26 +60,26 @@ export class Player {
   }
 
   /**
-   * Advance the placeholder swim behaviour and sync the transform.
+   * Drive the fish from a normalized input state for one frame.
+   * @param {{move:{x:number,y:number,z:number},look:{x:number,y:number},sprint:boolean,bite:boolean}} input
    * @param {number} dt seconds
+   * @param {boolean} [sprintAllowed] gate for sprint (stamina lands in a later task)
    */
-  update(dt) {
+  applyInput(input, dt, sprintAllowed = true) {
     this._t += dt
 
-    // Placeholder: lazily curve the heading and bob the pitch so there's motion
-    // to look at before input is wired up.
-    this.yaw = wrapAngle(this.yaw + dt * 0.35)
-    this.pitch = clampPitch(Math.sin(this._t * 0.5) * 0.25)
+    // Steer: look deltas are already scaled to radians for this frame.
+    this.yaw = wrapAngle(this.yaw + input.look.x)
+    this.pitch = clampPitch(this.pitch + input.look.y)
 
-    const dir = headingToDirection(this.yaw, this.pitch)
-    // Add a slow vertical bob independent of heading.
-    const bob = Math.sin(this._t * 1.3) * 1.2
-    this.velocity = {
-      x: dir.x * this.speed,
-      y: dir.y * this.speed + bob,
-      z: dir.z * this.speed,
-    }
+    this.sprinting = !!input.sprint && sprintAllowed
+    this.bite = !!input.bite
 
+    const maxSpeed = this.speed * (this.sprinting ? this.sprintMultiplier : 1)
+    const desired = desiredVelocity(input.move, this.yaw, this.pitch, maxSpeed)
+
+    // Ramp toward the desired velocity (thrust) / bleed off when idle (drag).
+    this.velocity = stepVelocity(this.velocity, desired, PLAYER_MOTION, dt)
     this.position = clampToBounds(integrate(this.position, this.velocity, dt), WORLD)
 
     this._syncTransform()
