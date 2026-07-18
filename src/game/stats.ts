@@ -13,7 +13,39 @@
 
 // --- Tunable survival constants -------------------------------------------
 
-export const STATS_CONFIG = {
+/** Survival tuning constants. */
+export interface StatsConfig {
+  hpMax: number
+  hungerMax: number
+  staminaMax: number
+  hungerDrainRate: number
+  starvationHpRate: number
+  hpRegenRate: number
+  wellFedThreshold: number
+  staminaDrainRate: number
+  staminaRegenRate: number
+  exhaustionRecover: number
+  hungerPerSize: number
+}
+
+/** A survival-stats snapshot. Pure model; produced by the functions below. */
+export interface Stats {
+  hp: number
+  hpMax: number
+  hunger: number
+  hungerMax: number
+  stamina: number
+  staminaMax: number
+  exhausted: boolean
+  alive: boolean
+}
+
+/** Options accepted by tickStats. */
+export interface TickOptions {
+  sprinting?: boolean
+}
+
+export const STATS_CONFIG: StatsConfig = {
   hpMax: 100,
   hungerMax: 100,
   staminaMax: 100,
@@ -30,16 +62,14 @@ export const STATS_CONFIG = {
   hungerPerSize: 20, // hunger restored per unit of prey size eaten
 }
 
-function clamp(v, lo, hi) {
+function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v
 }
 
 /**
  * Create a fresh, full stats snapshot.
- * @param {Partial<typeof STATS_CONFIG>} [config]
- * @returns {{hp:number,hpMax:number,hunger:number,hungerMax:number,stamina:number,staminaMax:number,exhausted:boolean,alive:boolean}}
  */
-export function createStats(config = STATS_CONFIG) {
+export function createStats(config: StatsConfig = STATS_CONFIG): Stats {
   return {
     hp: config.hpMax,
     hpMax: config.hpMax,
@@ -56,16 +86,13 @@ export function createStats(config = STATS_CONFIG) {
  * Whether the fish is currently allowed to sprint. Sprinting is gated while
  * dead, while there's no stamina, and during the exhaustion lockout (which
  * lasts until stamina recovers back above `exhaustionRecover`).
- * @param {ReturnType<typeof createStats>} stats
- * @param {typeof STATS_CONFIG} [config]
- * @returns {boolean}
  */
-export function sprintAllowed(stats, config = STATS_CONFIG) {
+export function sprintAllowed(stats: Stats, _config: StatsConfig = STATS_CONFIG): boolean {
   return stats.alive && !stats.exhausted && stats.stamina > 0
 }
 
 /** Convenience predicate. */
-export function isDead(stats) {
+export function isDead(stats: Stats): boolean {
   return !stats.alive || stats.hp <= 0
 }
 
@@ -76,12 +103,13 @@ export function isDead(stats) {
  *  - when hunger is high, hp slowly regenerates
  *  - stamina drains while sprinting, regenerates otherwise, with an
  *    exhaustion lockout once it bottoms out
- * @param {ReturnType<typeof createStats>} stats
- * @param {number} dt seconds
- * @param {{sprinting?:boolean}} [opts]
- * @param {typeof STATS_CONFIG} [config]
  */
-export function tickStats(stats, dt, { sprinting = false } = {}, config = STATS_CONFIG) {
+export function tickStats(
+  stats: Stats,
+  dt: number,
+  { sprinting = false }: TickOptions = {},
+  config: StatsConfig = STATS_CONFIG,
+): Stats {
   if (!stats.alive) return stats
   if (!(dt > 0)) return stats
 
@@ -113,11 +141,8 @@ export function tickStats(stats, dt, { sprinting = false } = {}, config = STATS_
 
 /**
  * Eat prey: restores hunger proportional to prey size, capped at max. Pure.
- * @param {ReturnType<typeof createStats>} stats
- * @param {number} targetSize
- * @param {typeof STATS_CONFIG} [config]
  */
-export function eat(stats, targetSize, config = STATS_CONFIG) {
+export function eat(stats: Stats, targetSize: number, config: StatsConfig = STATS_CONFIG): Stats {
   if (!stats.alive) return stats
   const restore = Math.max(0, targetSize) * config.hungerPerSize
   const hunger = clamp(stats.hunger + restore, 0, stats.hungerMax)
@@ -126,11 +151,8 @@ export function eat(stats, targetSize, config = STATS_CONFIG) {
 
 /**
  * Apply damage. Pure: returns the new snapshot plus a `dead` flag.
- * @param {ReturnType<typeof createStats>} stats
- * @param {number} amount hp to subtract (negative amounts are ignored)
- * @returns {{stats:ReturnType<typeof createStats>, dead:boolean}}
  */
-export function damage(stats, amount) {
+export function damage(stats: Stats, amount: number): { stats: Stats; dead: boolean } {
   if (!stats.alive) return { stats, dead: true }
   const hp = clamp(stats.hp - Math.max(0, amount), 0, stats.hpMax)
   const alive = hp > 0

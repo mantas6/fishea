@@ -3,6 +3,41 @@
 // listener code (keyboard.js, mouse.js, gamepad.js) feeds raw readings into
 // these helpers and the InputManager merges the results.
 
+import type { Vec3 } from '../movement.js'
+
+/** A plain 2D vector (mouse/stick deltas, look deltas). */
+export interface Vec2 {
+  x: number
+  y: number
+}
+
+/** Which input device most recently drove the game. */
+export type ActiveSource = 'gamepad' | 'keyboard-mouse'
+
+/** A single input source's contribution for one frame (device-agnostic). */
+export interface SourceState {
+  move: Vec3
+  look: Vec2
+  sprint: boolean
+  bite: boolean
+}
+
+/** The merged, per-frame input state consumed by gameplay. */
+export interface NormalizedInputState extends SourceState {
+  activeSource: ActiveSource
+}
+
+/** Semantic keyboard state for a frame. */
+export interface KeyState {
+  forward: boolean
+  back: boolean
+  left: boolean
+  right: boolean
+  up: boolean
+  down: boolean
+  sprint: boolean
+}
+
 // Default analog stick / trigger deadzone.
 export const DEADZONE = 0.15
 
@@ -10,7 +45,7 @@ export const DEADZONE = 0.15
 export const GAMEPAD_LOOK_SPEED = 2.6
 
 // Standard-mapping PS4 (DualShock) button indices we care about.
-export const GAMEPAD_BUTTONS = {
+export const GAMEPAD_BUTTONS: Record<string, number> = {
   BITE: 0, // Cross (X)
   BITE_ALT: 2, // Square
   SPRINT: 4, // L1
@@ -22,7 +57,7 @@ export const GAMEPAD_BUTTONS = {
 }
 
 /** A neutral (no-input) normalized source state. */
-export function neutralState() {
+export function neutralState(): SourceState {
   return {
     move: { x: 0, y: 0, z: 0 },
     look: { x: 0, y: 0 },
@@ -33,11 +68,8 @@ export function neutralState() {
 
 /**
  * Apply a 1D deadzone with rescaling so output ramps 0..1 past the threshold.
- * @param {number} value raw axis value (-1..1)
- * @param {number} [deadzone]
- * @returns {number}
  */
-export function applyDeadzone(value, deadzone = DEADZONE) {
+export function applyDeadzone(value: number, deadzone = DEADZONE): number {
   const mag = Math.abs(value)
   if (mag <= deadzone) return 0
   const sign = value < 0 ? -1 : 1
@@ -48,12 +80,8 @@ export function applyDeadzone(value, deadzone = DEADZONE) {
 /**
  * Radial deadzone for a 2-axis analog stick. Preserves direction while
  * rescaling magnitude past the deadzone. Returns a vector with |v| in 0..1.
- * @param {number} x
- * @param {number} y
- * @param {number} [deadzone]
- * @returns {{x:number,y:number}}
  */
-export function applyStickDeadzone(x, y, deadzone = DEADZONE) {
+export function applyStickDeadzone(x: number, y: number, deadzone = DEADZONE): Vec2 {
   const mag = Math.hypot(x, y)
   if (mag <= deadzone) return { x: 0, y: 0 }
   const scaled = Math.min((mag - deadzone) / (1 - deadzone), 1)
@@ -67,10 +95,8 @@ export function applyStickDeadzone(x, y, deadzone = DEADZONE) {
  *  - y: vertical (up positive)
  *  - z: forward (positive positive)
  * Horizontal (x,z) is clamped to unit length so diagonals aren't faster.
- * @param {{forward?:boolean,back?:boolean,left?:boolean,right?:boolean,up?:boolean,down?:boolean}} keys
- * @returns {{x:number,y:number,z:number}}
  */
-export function keysToMove(keys = {}) {
+export function keysToMove(keys: Partial<KeyState> = {}): Vec3 {
   let x = (keys.right ? 1 : 0) - (keys.left ? 1 : 0)
   let z = (keys.forward ? 1 : 0) - (keys.back ? 1 : 0)
   const y = (keys.up ? 1 : 0) - (keys.down ? 1 : 0)
@@ -85,11 +111,11 @@ export function keysToMove(keys = {}) {
 /**
  * Convert a deadzoned left-stick reading (+ vertical bools) into a move vector.
  * Pushing the stick up (negative axis Y) is forward.
- * @param {{x:number,y:number}} leftStick already deadzoned
- * @param {{up?:boolean,down?:boolean}} [vertical]
- * @returns {{x:number,y:number,z:number}}
  */
-export function stickToMove(leftStick, vertical = {}) {
+export function stickToMove(
+  leftStick: Vec2,
+  vertical: { up?: boolean; down?: boolean } = {},
+): Vec3 {
   return {
     x: leftStick.x,
     y: (vertical.up ? 1 : 0) - (vertical.down ? 1 : 0),
@@ -100,12 +126,8 @@ export function stickToMove(leftStick, vertical = {}) {
 /**
  * Convert a deadzoned right-stick reading into per-frame look deltas (radians).
  * Stick-right turns right (yaw decreases); stick-up looks up (pitch increases).
- * @param {{x:number,y:number}} rightStick already deadzoned
- * @param {number} dt seconds
- * @param {number} [speed] radians/sec at full tilt
- * @returns {{x:number,y:number}}
  */
-export function stickToLook(rightStick, dt, speed = GAMEPAD_LOOK_SPEED) {
+export function stickToLook(rightStick: Vec2, dt: number, speed = GAMEPAD_LOOK_SPEED): Vec2 {
   return {
     x: -rightStick.x * speed * dt,
     y: -rightStick.y * speed * dt,
@@ -115,11 +137,8 @@ export function stickToLook(rightStick, dt, speed = GAMEPAD_LOOK_SPEED) {
 /**
  * Does a normalized source state carry any meaningful input?
  * (Deadzones already zero small analog noise, so any nonzero value counts.)
- * @param {ReturnType<typeof neutralState>} state
- * @param {number} [threshold]
- * @returns {boolean}
  */
-export function hasInputActivity(state, threshold = 1e-4) {
+export function hasInputActivity(state: SourceState | null | undefined, threshold = 1e-4): boolean {
   if (!state) return false
   if (state.sprint || state.bite) return true
   const { move, look } = state
@@ -136,13 +155,13 @@ export function hasInputActivity(state, threshold = 1e-4) {
  * Merge the two input sources into one normalized state, applying the
  * gamepad-priority rule. When neither source is active the previous
  * ("latched") source is retained so the HUD can keep showing the last device.
- * @param {ReturnType<typeof neutralState>} gamepad
- * @param {ReturnType<typeof neutralState>} keyboardMouse
- * @param {'gamepad'|'keyboard-mouse'} [lastActive]
- * @returns {ReturnType<typeof neutralState> & {activeSource:'gamepad'|'keyboard-mouse'}}
  */
-export function mergeInputSources(gamepad, keyboardMouse, lastActive = 'keyboard-mouse') {
-  let activeSource = lastActive
+export function mergeInputSources(
+  gamepad: SourceState,
+  keyboardMouse: SourceState,
+  lastActive: ActiveSource = 'keyboard-mouse',
+): NormalizedInputState {
+  let activeSource: ActiveSource = lastActive
   if (hasInputActivity(gamepad)) {
     activeSource = 'gamepad'
   } else if (hasInputActivity(keyboardMouse)) {

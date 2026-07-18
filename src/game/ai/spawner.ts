@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { WORLD, clampToBounds, headingToDirection } from '../movement.js'
+import type { Vec3, WorldBounds } from '../movement.js'
 import { AIFish } from './AIFish.js'
 import {
   AI_CONFIG,
@@ -12,6 +13,53 @@ import {
   vdot,
   vdist,
 } from './behavior.js'
+import type { AiConfig, FishDescriptor, Rng } from './behavior.js'
+import type { FishMesh } from '../fish/FishMesh.js'
+import type { EventEmitter } from '../events.js'
+
+/** Spawn tuning; ranges are [min, max] multipliers of the player size. */
+export interface SpawnConfig {
+  targetPopulation: number
+  maxPopulation: number
+  minPopulation: number
+  spawnInterval: number
+  minSpawnDist: number
+  maxSpawnDist: number
+  despawnDist: number
+  smallerPct: number
+  similarPct: number
+  smallerRange: [number, number]
+  similarRange: [number, number]
+  biggerRange: [number, number]
+}
+
+/** The subset of the player the spawner reads + mutates. */
+export interface SpawnerPlayer {
+  position: Vec3
+  size: number
+  yaw: number
+  pitch: number
+  bite: boolean
+  fish?: FishMesh
+}
+
+/** Minimal emitter contract (real EventEmitter or a stub). */
+interface EmitterLike {
+  emit: EventEmitter['emit']
+}
+
+export interface SpawnerOptions {
+  scene?: THREE.Scene | null
+  player: SpawnerPlayer
+  events?: EmitterLike
+  rng?: Rng
+  config?: SpawnConfig
+  aiConfig?: AiConfig
+  bounds?: WorldBounds
+}
+
+/** Roughly categorised size relative to the player. */
+export type SizeCategory = 'smaller' | 'similar' | 'bigger'
 
 // Population manager for AI fish. Keeps ~25-35 fish alive around the player,
 // spawns them at a safe distance with a size distribution relative to the
@@ -21,7 +69,7 @@ import {
 // The pure decision helpers (size rolls, spawn position picking, despawn test)
 // live at the bottom and are unit tested with an injectable RNG.
 
-export const SPAWN_CONFIG = {
+export const SPAWN_CONFIG: SpawnConfig = {
   targetPopulation: 30, // spawn up toward this count
   maxPopulation: 35, // never exceed this
   minPopulation: 25, // informational floor
@@ -44,19 +92,20 @@ const FISH_COLORS = [
 ]
 
 export class Spawner {
-  /**
-   * @param {{
-   *   scene: import('three').Scene,
-   *   player: { position:{x:number,y:number,z:number}, size:number, yaw:number, pitch:number, bite:boolean, fish?:any },
-   *   events?: { emit:(name:string, payload?:any) => void },
-   *   rng?: () => number,
-   *   config?: typeof SPAWN_CONFIG,
-   *   aiConfig?: typeof AI_CONFIG,
-   *   bounds?: typeof WORLD,
-   * }} options
-   */
-  constructor(options = {}) {
-    this.scene = options.scene
+  scene: THREE.Scene | null
+  player: SpawnerPlayer
+  events: EmitterLike
+  rng: Rng
+  config: SpawnConfig
+  aiConfig: AiConfig
+  bounds: WorldBounds
+  fish: AIFish[]
+  private _timer: number
+  private _prevBite: boolean
+  private _descriptors: FishDescriptor[]
+
+  constructor(options: SpawnerOptions) {
+    this.scene = options.scene ?? null
     this.player = options.player
     this.events = options.events ?? { emit() {} }
     this.rng = options.rng ?? makeRng((Math.random() * 0xffffffff) >>> 0)
@@ -64,7 +113,6 @@ export class Spawner {
     this.aiConfig = options.aiConfig ?? AI_CONFIG
     this.bounds = options.bounds ?? WORLD
 
-    /** @type {AIFish[]} */
     this.fish = []
     this._timer = 0
     this._prevBite = false
@@ -74,17 +122,17 @@ export class Spawner {
   }
 
   /** Current live population. */
-  get population() {
+  get population(): number {
     return this.fish.length
   }
 
   /** Pre-fill the world so the player isn't alone on the first frame. */
-  seed(count = this.config.targetPopulation) {
+  seed(count = this.config.targetPopulation): void {
     for (let i = 0; i < count; i++) this.spawnOne()
   }
 
   /** Spawn a single fish (respecting the max population cap). */
-  spawnOne() {
+  spawnOne(): AIFish | null {
     if (this.fish.length >= this.config.maxPopulation) return null
     const size = rollSize(this.player.size, this.rng, this.config)
     const position = pickSpawnPosition(this.player.position, this.rng, this.config, this.bounds)
@@ -103,7 +151,7 @@ export class Spawner {
   }
 
   /** Remove a fish by index, freeing its resources and detaching it. */
-  _removeAt(index) {
+  _removeAt(index: number): void {
     const fish = this.fish[index]
     if (!fish) return
     if (this.scene) this.scene.remove(fish.object3d)
@@ -115,9 +163,8 @@ export class Spawner {
   /**
    * Advance the whole population one frame: spawn timing, per-fish AI update,
    * despawn of far-away fish, and all eating resolution.
-   * @param {number} dt seconds
    */
-  update(dt) {
+  update(dt: number): void {
     // --- Spawn over time when population drops.
     this._timer += dt
     if (this._timer >= this.config.spawnInterval) {
@@ -148,7 +195,7 @@ export class Spawner {
   }
 
   /** Resolve every eat interaction for the frame. */
-  _resolveEating() {
+  _resolveEating(): void {
     const player = this.player
     const ai = this.fish
 
@@ -189,11 +236,11 @@ export class Spawner {
   }
 
   /** Handle a single player bite (rising edge). */
-  _playerBite() {
+  _playerBite(): void {
     const player = this.player
     const heading = headingToDirection(player.yaw, player.pitch)
-    let bestPrey = null
-    let bestTooBig = null
+    let bestPrey: AIFish | null = null
+    let bestTooBig: AIFish | null = null
     let bestDist = Infinity
 
     for (const fish of this.fish) {
@@ -228,7 +275,7 @@ export class Spawner {
   }
 
   /** Tear down all fish. */
-  dispose() {
+  dispose(): void {
     for (const f of this.fish) {
       if (this.scene) this.scene.remove(f.object3d)
       f.dispose()
@@ -241,11 +288,8 @@ export class Spawner {
 
 /**
  * Roll a size category using the configured distribution.
- * @param {() => number} rng
- * @param {typeof SPAWN_CONFIG} [config]
- * @returns {'smaller'|'similar'|'bigger'}
  */
-export function rollSizeCategory(rng, config = SPAWN_CONFIG) {
+export function rollSizeCategory(rng: Rng, config: SpawnConfig = SPAWN_CONFIG): SizeCategory {
   const r = rng()
   if (r < config.smallerPct) return 'smaller'
   if (r < config.smallerPct + config.similarPct) return 'similar'
@@ -254,13 +298,13 @@ export function rollSizeCategory(rng, config = SPAWN_CONFIG) {
 
 /**
  * Roll a concrete fish size relative to the player, respecting the max cap.
- * @param {number} playerSize
- * @param {() => number} rng
- * @param {typeof SPAWN_CONFIG} [config]
- * @param {number} [maxSize] hard cap on absolute size
- * @returns {number}
  */
-export function rollSize(playerSize, rng, config = SPAWN_CONFIG, maxSize = AI_CONFIG.maxSize) {
+export function rollSize(
+  playerSize: number,
+  rng: Rng,
+  config: SpawnConfig = SPAWN_CONFIG,
+  maxSize = AI_CONFIG.maxSize,
+): number {
   const category = rollSizeCategory(rng, config)
   const range =
     category === 'smaller'
@@ -277,13 +321,13 @@ export function rollSize(playerSize, rng, config = SPAWN_CONFIG, maxSize = AI_CO
  * Pick a spawn position at least minSpawnDist (XZ) from the player and inside
  * the world bounds. Retries a few times, then falls back to a guaranteed-far
  * ring position.
- * @param {{x:number,y:number,z:number}} playerPos
- * @param {() => number} rng
- * @param {typeof SPAWN_CONFIG} [config]
- * @param {typeof WORLD} [bounds]
- * @returns {{x:number,y:number,z:number}}
  */
-export function pickSpawnPosition(playerPos, rng, config = SPAWN_CONFIG, bounds = WORLD) {
+export function pickSpawnPosition(
+  playerPos: Vec3,
+  rng: Rng,
+  config: SpawnConfig = SPAWN_CONFIG,
+  bounds: WorldBounds = WORLD,
+): Vec3 {
   const minY = bounds.seafloorY + bounds.fishFloorMargin
   const maxY = bounds.surfaceY - bounds.fishSurfaceMargin
 
@@ -310,12 +354,12 @@ export function pickSpawnPosition(playerPos, rng, config = SPAWN_CONFIG, bounds 
 /**
  * Whether a fish should be recycled because it wandered too far (XZ) from the
  * player.
- * @param {{x:number,y:number,z:number}} fishPos
- * @param {{x:number,y:number,z:number}} playerPos
- * @param {typeof SPAWN_CONFIG} [config]
- * @returns {boolean}
  */
-export function shouldDespawn(fishPos, playerPos, config = SPAWN_CONFIG) {
+export function shouldDespawn(
+  fishPos: Vec3,
+  playerPos: Vec3,
+  config: SpawnConfig = SPAWN_CONFIG,
+): boolean {
   return Math.hypot(fishPos.x - playerPos.x, fishPos.z - playerPos.z) > config.despawnDist
 }
 

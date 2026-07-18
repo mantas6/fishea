@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { Game } from './game/Game.js'
+import type { HudSnapshot } from './game/Game.js'
+import type { DeathCause } from './game/events.js'
+import type { AudioState } from './game/audio/index.js'
 import Hud from './Hud.jsx'
 
+interface DeathState {
+  cause: DeathCause
+}
+
 export default function App() {
-  const gameRef = useRef(null)
-  const [hud, setHud] = useState(null)
-  const [death, setDeath] = useState(null)
-  const [audio, setAudio] = useState({ unlocked: false, muted: false })
+  const gameRef = useRef<Game | null>(null)
+  const [hud, setHud] = useState<HudSnapshot | null>(null)
+  const [death, setDeath] = useState<DeathState | null>(null)
+  const [audio, setAudio] = useState<AudioState>({ unlocked: false, muted: false })
 
   useEffect(() => {
     const container = document.getElementById('game')
@@ -48,7 +55,7 @@ export default function App() {
 
   // M key toggles mute anywhere in the game.
   useEffect(() => {
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === 'm' || e.key === 'M') {
         e.preventDefault()
         handleToggleMute()
@@ -61,7 +68,7 @@ export default function App() {
   // Let Enter restart from the death screen (mouse is pointer-locked mid-game).
   useEffect(() => {
     if (!death) return undefined
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter') {
         e.preventDefault()
         handleRestart()

@@ -11,12 +11,23 @@ import {
   stickToLook,
   neutralState,
 } from './normalize.js'
+import type { SourceState } from './normalize.js'
+
+export interface GamepadOptions {
+  deadzone?: number
+  lookSpeed?: number
+  target?: EventTarget | null
+}
+
+type GamepadButtonLike = GamepadButton | number | undefined
 
 export class GamepadInput {
-  /**
-   * @param {{deadzone?:number,lookSpeed?:number,target?:Window|EventTarget}} [options]
-   */
-  constructor(options = {}) {
+  deadzone: number
+  lookSpeed: number
+  private _target: EventTarget | null
+  private _index: number | null
+
+  constructor(options: GamepadOptions = {}) {
     this.deadzone = options.deadzone ?? DEADZONE
     this.lookSpeed = options.lookSpeed ?? GAMEPAD_LOOK_SPEED
     this._target = options.target ?? (typeof window !== 'undefined' ? window : null)
@@ -26,26 +37,26 @@ export class GamepadInput {
     this._onDisconnect = this._onDisconnect.bind(this)
 
     if (this._target) {
-      this._target.addEventListener('gamepadconnected', this._onConnect)
-      this._target.addEventListener('gamepaddisconnected', this._onDisconnect)
+      this._target.addEventListener('gamepadconnected', this._onConnect as EventListener)
+      this._target.addEventListener('gamepaddisconnected', this._onDisconnect as EventListener)
     }
   }
 
-  _onConnect(e) {
+  _onConnect(e: GamepadEvent): void {
     if (this._index == null && e.gamepad) this._index = e.gamepad.index
   }
 
-  _onDisconnect(e) {
+  _onDisconnect(e: GamepadEvent): void {
     if (e.gamepad && e.gamepad.index === this._index) this._index = null
   }
 
   /** Whether a gamepad is currently connected/available. */
-  get connected() {
+  get connected(): boolean {
     return this._poll() != null
   }
 
   /** Read the live Gamepad object we're tracking (or the first present one). */
-  _poll() {
+  _poll(): Gamepad | null {
     if (typeof navigator === 'undefined' || !navigator.getGamepads) return null
     const pads = navigator.getGamepads()
     if (!pads) return null
@@ -61,17 +72,15 @@ export class GamepadInput {
     return null
   }
 
-  _pressed(buttons, i) {
+  _pressed(buttons: ReadonlyArray<GamepadButtonLike>, i: number): boolean {
     const b = buttons[i]
     return !!b && (typeof b === 'object' ? b.pressed || b.value > 0.5 : b > 0.5)
   }
 
   /**
    * Build this frame's normalized source state from the live pad.
-   * @param {number} dt seconds
-   * @returns {ReturnType<typeof neutralState>}
    */
-  getState(dt) {
+  getState(dt: number): SourceState {
     const pad = this._poll()
     if (!pad) return neutralState()
 
@@ -92,10 +101,10 @@ export class GamepadInput {
     }
   }
 
-  dispose() {
+  dispose(): void {
     if (this._target) {
-      this._target.removeEventListener('gamepadconnected', this._onConnect)
-      this._target.removeEventListener('gamepaddisconnected', this._onDisconnect)
+      this._target.removeEventListener('gamepadconnected', this._onConnect as EventListener)
+      this._target.removeEventListener('gamepaddisconnected', this._onDisconnect as EventListener)
     }
     this._index = null
   }

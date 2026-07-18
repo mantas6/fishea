@@ -1,18 +1,38 @@
 import * as THREE from 'three'
 import { createWorld, DEEP_COLOR } from './world.js'
+import type { World } from './world.js'
 import { Player } from './Player.js'
 import { computeCameraTarget, dampVector, CAMERA_DEFAULTS } from './camera.js'
 import { InputManager } from './input/index.js'
+import type { ActiveSource, SourceState } from './input/normalize.js'
 import { EventEmitter } from './events.js'
+import type { DeathCause } from './events.js'
 import { Spawner } from './ai/spawner.js'
 import { createStats, tickStats, eat, damage, sprintAllowed } from './stats.js'
+import type { Stats } from './stats.js'
 import { AudioManager } from './audio/index.js'
+import type { Vec3 } from './movement.js'
 
 // Owns the Three.js renderer, scene, camera, clock, and the RAF loop.
 // All WebGL/DOM work lives here so the pure modules stay test-friendly.
 
+/** The throttled snapshot the HUD renders (also emitted as the 'hud' event). */
+export interface HudSnapshot {
+  hp: number
+  hpMax: number
+  hunger: number
+  hungerMax: number
+  stamina: number
+  staminaMax: number
+  exhausted: boolean
+  size: number
+  activeSource: ActiveSource
+  alive: boolean
+  sprinting: boolean
+}
+
 // Neutral input used to freeze the player after death (drifts to a stop).
-const FROZEN_INPUT = {
+const FROZEN_INPUT: SourceState = {
   move: { x: 0, y: 0, z: 0 },
   look: { x: 0, y: 0 },
   sprint: false,
@@ -20,10 +40,31 @@ const FROZEN_INPUT = {
 }
 
 export class Game {
-  /**
-   * @param {HTMLElement} container element to mount the canvas into
-   */
-  constructor(container) {
+  container: HTMLElement
+  renderer: THREE.WebGLRenderer
+  scene: THREE.Scene
+  camera: THREE.PerspectiveCamera
+  world: World
+  player: Player
+  events: EventEmitter
+  stats: Stats
+  alive: boolean
+  spawner: Spawner
+  input: InputManager
+  audio: AudioManager
+  clock: THREE.Clock
+  onHudUpdate?: (snapshot: HudSnapshot) => void
+  private _initialPlayerSize: number
+  private _hudTimer: number
+  private _hudInterval: number
+  private _activeSource: ActiveSource
+  private _unsubs: Array<() => void>
+  private _camPos: Vec3
+  private _camLook: Vec3
+  private _running: boolean
+  private _rafId: number | null
+
+  constructor(container: HTMLElement) {
     if (!container) throw new Error('Game requires a container element')
     this.container = container
 
@@ -109,7 +150,7 @@ export class Game {
   }
 
   /** Start the render loop. */
-  start() {
+  start(): void {
     if (this._running) return
     this._running = true
     this.clock.start()
@@ -117,7 +158,7 @@ export class Game {
   }
 
   /** Stop the render loop (without tearing down resources). */
-  stop() {
+  stop(): void {
     this._running = false
     if (this._rafId != null) {
       cancelAnimationFrame(this._rafId)
@@ -125,7 +166,7 @@ export class Game {
     }
   }
 
-  _loop() {
+  _loop(): void {
     if (!this._running) return
     const dt = Math.min(this.clock.getDelta(), 0.1) // clamp big frame gaps
 
@@ -162,9 +203,9 @@ export class Game {
   }
 
   /** Build and emit a HUD snapshot (also invokes onHudUpdate if set). */
-  _emitHud() {
+  _emitHud(): void {
     const s = this.stats
-    const snapshot = {
+    const snapshot: HudSnapshot = {
       hp: s.hp,
       hpMax: s.hpMax,
       hunger: s.hunger,
@@ -182,7 +223,7 @@ export class Game {
   }
 
   /** Transition to the dead state exactly once and announce the cause. */
-  _handleDeath(cause) {
+  _handleDeath(cause: DeathCause): void {
     if (!this.alive) return
     this.alive = false
     this.events.emit('player-died', { cause })
@@ -193,7 +234,7 @@ export class Game {
    * Reset stats, the player, and the fish population for a fresh run.
    * Safe to call at any time (whether alive or dead).
    */
-  restart() {
+  restart(): void {
     this.stats = createStats()
     this.alive = true
 
@@ -217,7 +258,7 @@ export class Game {
     this._emitHud()
   }
 
-  _updateCamera(dt) {
+  _updateCamera(dt: number): void {
     const { position, lookAt } = computeCameraTarget(
       this.player.position,
       this.player.yaw,
@@ -230,7 +271,7 @@ export class Game {
     this.camera.lookAt(this._camLook.x, this._camLook.y, this._camLook.z)
   }
 
-  _onResize() {
+  _onResize(): void {
     const width = this.container.clientWidth || window.innerWidth
     const height = this.container.clientHeight || window.innerHeight
     this.camera.aspect = width / height
@@ -239,7 +280,7 @@ export class Game {
   }
 
   /** Tear everything down and remove the canvas. */
-  dispose() {
+  dispose(): void {
     this.stop()
     window.removeEventListener('resize', this._onResize)
 

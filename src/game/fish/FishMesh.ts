@@ -4,7 +4,15 @@ import * as THREE from 'three'
 // Returned as a class wrapping a THREE.Group; call update(dt, speed) each frame.
 // Reusable/parameterizable so AI fish can share the exact same builder later.
 
-const DEFAULTS = {
+export interface FishMeshOptions {
+  size: number
+  color: number
+  bellyColor: number
+  finColor: number
+  eyeColor: number
+}
+
+const DEFAULTS: FishMeshOptions = {
   size: 1, // overall scale multiplier
   color: 0xff8c42, // body color
   bellyColor: 0xffe0b3, // lighter underside
@@ -13,10 +21,14 @@ const DEFAULTS = {
 }
 
 export class FishMesh {
-  /**
-   * @param {Partial<typeof DEFAULTS>} [options]
-   */
-  constructor(options = {}) {
+  options: FishMeshOptions
+  group: THREE.Group
+  tailPivot: THREE.Group
+  finLeft: THREE.Mesh
+  finRight: THREE.Mesh
+  private _t: number
+
+  constructor(options: Partial<FishMeshOptions> = {}) {
     const opts = { ...DEFAULTS, ...options }
     this.options = opts
 
@@ -118,10 +130,8 @@ export class FishMesh {
 
   /**
    * Animate swim motion.
-   * @param {number} dt seconds
-   * @param {number} [speed] current speed (units/s); scales the wag intensity.
    */
-  update(dt, speed = 1) {
+  update(dt: number, speed = 1): void {
     this._t += dt
     const intensity = Math.min(1.2, 0.35 + speed * 0.12)
     const wagFreq = 6 + speed * 1.5
@@ -140,19 +150,19 @@ export class FishMesh {
 
   /**
    * Rescale the whole fish. Used when a fish grows after eating.
-   * @param {number} size
    */
-  setSize(size) {
+  setSize(size: number): void {
     this.options.size = size
     this.group.scale.setScalar(size)
   }
 
   /** Free GPU resources. */
-  dispose() {
+  dispose(): void {
     this.group.traverse((obj) => {
-      if (obj.geometry) obj.geometry.dispose()
-      if (obj.material) {
-        const mats = Array.isArray(obj.material) ? obj.material : [obj.material]
+      const mesh = obj as THREE.Mesh
+      if (mesh.geometry) mesh.geometry.dispose()
+      if (mesh.material) {
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
         mats.forEach((m) => m.dispose())
       }
     })

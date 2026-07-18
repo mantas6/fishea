@@ -2,8 +2,17 @@
 // Works on plain {x, y, z} objects so it can be unit-tested without Three.js.
 
 import { headingToDirection } from './movement.js'
+import type { Vec3 } from './movement.js'
 
-export const CAMERA_DEFAULTS = {
+/** Third-person camera tuning. */
+export interface CameraOptions {
+  distance: number
+  height: number
+  lookAhead: number
+  lambda: number
+}
+
+export const CAMERA_DEFAULTS: CameraOptions = {
   distance: 9, // how far behind the fish
   height: 3, // how far above the fish
   lookAhead: 4, // how far in front of the fish to aim
@@ -12,25 +21,15 @@ export const CAMERA_DEFAULTS = {
 
 /**
  * Frame-rate independent exponential damping toward a target scalar.
- * @param {number} current
- * @param {number} target
- * @param {number} lambda
- * @param {number} dt
- * @returns {number}
  */
-export function damp(current, target, lambda, dt) {
+export function damp(current: number, target: number, lambda: number, dt: number): number {
   return target + (current - target) * Math.exp(-lambda * dt)
 }
 
 /**
  * Damp a {x,y,z} vector toward a target. Pure — returns a new object.
- * @param {{x:number,y:number,z:number}} current
- * @param {{x:number,y:number,z:number}} target
- * @param {number} lambda
- * @param {number} dt
- * @returns {{x:number,y:number,z:number}}
  */
-export function dampVector(current, target, lambda, dt) {
+export function dampVector(current: Vec3, target: Vec3, lambda: number, dt: number): Vec3 {
   return {
     x: damp(current.x, target.x, lambda, dt),
     y: damp(current.y, target.y, lambda, dt),
@@ -42,13 +41,13 @@ export function dampVector(current, target, lambda, dt) {
  * Compute the ideal (un-smoothed) camera position + look-at target for a fish.
  * The camera sits behind and above the fish along its heading and looks a bit
  * ahead of it.
- * @param {{x:number,y:number,z:number}} playerPos
- * @param {number} yaw
- * @param {number} pitch
- * @param {typeof CAMERA_DEFAULTS} [opts]
- * @returns {{position:{x:number,y:number,z:number},lookAt:{x:number,y:number,z:number}}}
  */
-export function computeCameraTarget(playerPos, yaw, pitch, opts = CAMERA_DEFAULTS) {
+export function computeCameraTarget(
+  playerPos: Vec3,
+  yaw: number,
+  pitch: number,
+  opts: CameraOptions = CAMERA_DEFAULTS,
+): { position: Vec3; lookAt: Vec3 } {
   const dir = headingToDirection(yaw, pitch)
 
   // Position: move opposite the heading (behind) and lift up.

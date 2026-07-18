@@ -6,9 +6,49 @@
 //   { position: { x, y, z }, size: number, ... }
 // The player is treated as just another fish descriptor in this reckoning.
 
+import type { Vec3 } from '../movement.js'
+
+/** Any fish-like entity the AI can reason about (player included). */
+export interface FishDescriptor {
+  position: Vec3
+  size: number
+}
+
+/** Tunable AI behaviour constants. */
+export interface AiConfig {
+  senseRadius: number
+  aggroRadius: number
+  threatRatio: number
+  preyRatio: number
+  wanderRate: number
+  wanderVertical: number
+  cruiseSpeed: number
+  chaseSpeed: number
+  burstSpeed: number
+  eatRangeBase: number
+  growthFraction: number
+  maxSize: number
+}
+
+/** A pseudo-random number generator returning a float in [0, 1). */
+export type Rng = () => number
+
+/** Neighbour classification relative to a fish's own size. */
+export type NeighborKind = 'threat' | 'prey' | 'neutral'
+
+/** A perceived neighbour with its distance and classification. */
+export interface PerceivedNeighbor {
+  fish: FishDescriptor
+  dist: number
+  kind: NeighborKind
+}
+
+/** Behaviour mode chosen for a fish this frame. */
+export type BehaviorMode = 'flee' | 'chase' | 'wander'
+
 // --- Tunable AI constants -------------------------------------------------
 
-export const AI_CONFIG = {
+export const AI_CONFIG: AiConfig = {
   senseRadius: 42, // how far a fish can perceive neighbours
   aggroRadius: 26, // how close prey must be before a fish will give chase
   threatRatio: 1.25, // neighbour is a threat when size >= mine * this
@@ -25,30 +65,27 @@ export const AI_CONFIG = {
 
 // --- Tiny vector helpers (plain objects, no allocation-heavy chains) ------
 
-export function vlen(v) {
+export function vlen(v: Vec3): number {
   return Math.hypot(v.x, v.y, v.z)
 }
 
-export function vsub(a, b) {
+export function vsub(a: Vec3, b: Vec3): Vec3 {
   return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }
 }
 
-export function vdist(a, b) {
+export function vdist(a: Vec3, b: Vec3): number {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z)
 }
 
-export function vdot(a, b) {
+export function vdot(a: Vec3, b: Vec3): number {
   return a.x * b.x + a.y * b.y + a.z * b.z
 }
 
 /**
  * Normalize a vector to unit length. When the vector is (near) zero, returns
  * the provided fallback (also normalized) or a default forward heading.
- * @param {{x:number,y:number,z:number}} v
- * @param {{x:number,y:number,z:number}} [fallback]
- * @returns {{x:number,y:number,z:number}}
  */
-export function vnorm(v, fallback = { x: 0, y: 0, z: -1 }) {
+export function vnorm(v: Vec3, fallback: Vec3 = { x: 0, y: 0, z: -1 }): Vec3 {
   const len = vlen(v)
   if (len < 1e-6) {
     const fl = vlen(fallback)
@@ -62,10 +99,8 @@ export function vnorm(v, fallback = { x: 0, y: 0, z: -1 }) {
 
 /**
  * Deterministic PRNG so behaviour + spawning can be reproduced in tests.
- * @param {number} seed
- * @returns {() => number} function returning a float in [0, 1)
  */
-export function makeRng(seed = 1) {
+export function makeRng(seed = 1): Rng {
   let a = seed >>> 0
   return function () {
     a |= 0
@@ -80,12 +115,12 @@ export function makeRng(seed = 1) {
 
 /**
  * Classify a neighbour relative to my size.
- * @param {number} mySize
- * @param {number} otherSize
- * @param {typeof AI_CONFIG} [config]
- * @returns {'threat'|'prey'|'neutral'}
  */
-export function classifyNeighbor(mySize, otherSize, config = AI_CONFIG) {
+export function classifyNeighbor(
+  mySize: number,
+  otherSize: number,
+  config: AiConfig = AI_CONFIG,
+): NeighborKind {
   if (otherSize >= mySize * config.threatRatio) return 'threat'
   if (otherSize <= mySize * config.preyRatio) return 'prey'
   return 'neutral'
@@ -94,14 +129,15 @@ export function classifyNeighbor(mySize, otherSize, config = AI_CONFIG) {
 /**
  * Partition the neighbours within sense radius into threat/prey/neutral lists.
  * Each entry is { fish, dist, kind }.
- * @param {{position:{x:number,y:number,z:number},size:number}} self
- * @param {Array<{position:{x:number,y:number,z:number},size:number}>} neighbors
- * @param {typeof AI_CONFIG} [config]
  */
-export function perceive(self, neighbors, config = AI_CONFIG) {
-  const threats = []
-  const prey = []
-  const neutral = []
+export function perceive(
+  self: FishDescriptor,
+  neighbors: FishDescriptor[],
+  config: AiConfig = AI_CONFIG,
+): { threats: PerceivedNeighbor[]; prey: PerceivedNeighbor[]; neutral: PerceivedNeighbor[] } {
+  const threats: PerceivedNeighbor[] = []
+  const prey: PerceivedNeighbor[] = []
+  const neutral: PerceivedNeighbor[] = []
   for (const fish of neighbors) {
     if (fish === self) continue
     const dist = vdist(self.position, fish.position)
@@ -117,10 +153,13 @@ export function perceive(self, neighbors, config = AI_CONFIG) {
 
 /**
  * Nearest threat within sense radius, or null.
- * @returns {{position:{x:number,y:number,z:number},size:number}|null}
  */
-export function nearestThreat(self, neighbors, config = AI_CONFIG) {
-  let best = null
+export function nearestThreat(
+  self: FishDescriptor,
+  neighbors: FishDescriptor[],
+  config: AiConfig = AI_CONFIG,
+): FishDescriptor | null {
+  let best: FishDescriptor | null = null
   let bestDist = Infinity
   for (const fish of neighbors) {
     if (fish === self) continue
@@ -137,10 +176,13 @@ export function nearestThreat(self, neighbors, config = AI_CONFIG) {
 /**
  * Nearest prey within aggro radius, or null. Aggro radius is shorter than the
  * sense radius so fish only commit to a chase when prey is reasonably close.
- * @returns {{position:{x:number,y:number,z:number},size:number}|null}
  */
-export function nearestPrey(self, neighbors, config = AI_CONFIG) {
-  let best = null
+export function nearestPrey(
+  self: FishDescriptor,
+  neighbors: FishDescriptor[],
+  config: AiConfig = AI_CONFIG,
+): FishDescriptor | null {
+  let best: FishDescriptor | null = null
   let bestDist = Infinity
   for (const fish of neighbors) {
     if (fish === self) continue
@@ -159,13 +201,8 @@ export function nearestPrey(self, neighbors, config = AI_CONFIG) {
 /**
  * Advance a (unit) wander heading with smooth random jitter. Pure — returns a
  * new normalized heading. Vertical jitter is damped so fish mostly swim level.
- * @param {{x:number,y:number,z:number}} heading current unit heading
- * @param {() => number} rng
- * @param {number} dt
- * @param {typeof AI_CONFIG} [config]
- * @returns {{x:number,y:number,z:number}}
  */
-export function wanderStep(heading, rng, dt, config = AI_CONFIG) {
+export function wanderStep(heading: Vec3, rng: Rng, dt: number, config: AiConfig = AI_CONFIG): Vec3 {
   const j = config.wanderRate * dt
   const next = {
     x: heading.x + (rng() - 0.5) * j,
@@ -177,19 +214,15 @@ export function wanderStep(heading, rng, dt, config = AI_CONFIG) {
 
 /**
  * Unit vector steering AWAY from a threat position.
- * @param {{x:number,y:number,z:number}} selfPos
- * @param {{x:number,y:number,z:number}} threatPos
  */
-export function fleeDirection(selfPos, threatPos) {
+export function fleeDirection(selfPos: Vec3, threatPos: Vec3): Vec3 {
   return vnorm(vsub(selfPos, threatPos))
 }
 
 /**
  * Unit vector steering TOWARD a prey position.
- * @param {{x:number,y:number,z:number}} selfPos
- * @param {{x:number,y:number,z:number}} preyPos
  */
-export function chaseDirection(selfPos, preyPos) {
+export function chaseDirection(selfPos: Vec3, preyPos: Vec3): Vec3 {
   return vnorm(vsub(preyPos, selfPos))
 }
 
@@ -197,30 +230,30 @@ export function chaseDirection(selfPos, preyPos) {
 
 /**
  * How close (centre to centre) an eater must be to swallow prey.
- * @param {number} eaterSize
- * @param {typeof AI_CONFIG} [config]
  */
-export function eatRange(eaterSize, config = AI_CONFIG) {
+export function eatRange(eaterSize: number, config: AiConfig = AI_CONFIG): number {
   return config.eatRangeBase * eaterSize
 }
 
 /**
  * Whether an eater is allowed to eat a target (target is prey-sized).
- * @param {{size:number}} eater
- * @param {{size:number}} target
- * @param {typeof AI_CONFIG} [config]
  */
-export function canEat(eater, target, config = AI_CONFIG) {
+export function canEat(
+  eater: { size: number },
+  target: { size: number },
+  config: AiConfig = AI_CONFIG,
+): boolean {
   return target.size <= eater.size * config.preyRatio
 }
 
 /**
  * Whether an eater is close enough to a target to eat it.
- * @param {{position:{x:number,y:number,z:number},size:number}} eater
- * @param {{position:{x:number,y:number,z:number}}} target
- * @param {typeof AI_CONFIG} [config]
  */
-export function inEatRange(eater, target, config = AI_CONFIG) {
+export function inEatRange(
+  eater: FishDescriptor,
+  target: { position: Vec3 },
+  config: AiConfig = AI_CONFIG,
+): boolean {
   return vdist(eater.position, target.position) <= eatRange(eater.size, config)
 }
 
@@ -228,12 +261,12 @@ export function inEatRange(eater, target, config = AI_CONFIG) {
  * Resolve an eat event. Pure — computes how much the eater grows (respecting
  * the max-size cap) and its resulting size. The caller applies the growth and
  * removes the target.
- * @param {{size:number}} eater
- * @param {{size:number}} target
- * @param {typeof AI_CONFIG} [config]
- * @returns {{growth:number, newSize:number}}
  */
-export function resolveEat(eater, target, config = AI_CONFIG) {
+export function resolveEat(
+  eater: { size: number },
+  target: { size: number },
+  config: AiConfig = AI_CONFIG,
+): { growth: number; newSize: number } {
   const newSize = Math.min(config.maxSize, eater.size + config.growthFraction * target.size)
   return { growth: newSize - eater.size, newSize }
 }
@@ -243,9 +276,12 @@ export function resolveEat(eater, target, config = AI_CONFIG) {
 /**
  * Decide the behaviour mode for a fish given its neighbours. Flee overrides
  * chase overrides wander.
- * @returns {{mode:'flee'|'chase'|'wander', target:object|null}}
  */
-export function decideBehavior(self, neighbors, config = AI_CONFIG) {
+export function decideBehavior(
+  self: FishDescriptor,
+  neighbors: FishDescriptor[],
+  config: AiConfig = AI_CONFIG,
+): { mode: BehaviorMode; target: FishDescriptor | null } {
   const threat = nearestThreat(self, neighbors, config)
   if (threat) return { mode: 'flee', target: threat }
   const prey = nearestPrey(self, neighbors, config)

@@ -4,10 +4,57 @@
 // nodes are one-shot: they're created per hit and stop themselves so there's
 // nothing to garbage collect manually.
 
+import type { AudioEngine } from './engine.js'
+
+/** The procedural SFX kit returned by createSfx. */
+export interface SfxKit {
+  bite(): void
+  eat(): void
+  miss(): void
+  hurt(): void
+  death(): void
+  swish(): void
+}
+
+/** A running low-HP heartbeat loop. */
+export interface Heartbeat {
+  readonly running: boolean
+  start(): void
+  stop(): void
+}
+
+type NoiseCache = Record<string, AudioBuffer>
+
+interface EnvGainOptions {
+  peak?: number
+  attack?: number
+  decay?: number
+  start: number
+}
+
+interface NoiseBurstOptions {
+  start: number
+  duration?: number
+  peak?: number
+  type?: BiquadFilterType
+  freq?: number
+  q?: number
+}
+
+interface ToneOptions {
+  start: number
+  type?: OscillatorType
+  freqStart?: number
+  freqEnd?: number
+  duration?: number
+  peak?: number
+  attack?: number
+}
+
 // --- Low-level building blocks --------------------------------------------
 
 /** Build (and cache) a mono white-noise buffer of `seconds` length. */
-function getNoiseBuffer(ctx, cache, seconds = 1) {
+function getNoiseBuffer(ctx: AudioContext, cache: NoiseCache, seconds = 1): AudioBuffer {
   const key = `noise:${seconds}`
   if (cache[key]) return cache[key]
   const length = Math.max(1, Math.floor(ctx.sampleRate * seconds))
@@ -19,7 +66,11 @@ function getNoiseBuffer(ctx, cache, seconds = 1) {
 }
 
 /** A quick percussive gain envelope (attack -> exponential decay). */
-function envGain(ctx, dest, { peak = 1, attack = 0.005, decay = 0.2, start }) {
+function envGain(
+  ctx: AudioContext,
+  dest: AudioNode,
+  { peak = 1, attack = 0.005, decay = 0.2, start }: EnvGainOptions,
+): GainNode {
   const g = ctx.createGain()
   const t = start
   g.gain.setValueAtTime(0.0001, t)
@@ -32,25 +83,31 @@ function envGain(ctx, dest, { peak = 1, attack = 0.005, decay = 0.2, start }) {
 /**
  * Create the procedural SFX kit bound to an AudioEngine. Every trigger is a
  * no-op until the engine is unlocked (has a live context + sfx bus).
- * @param {import('./engine.js').AudioEngine} engine
  */
-export function createSfx(engine) {
-  const noiseCache = {}
+export function createSfx(engine: AudioEngine): SfxKit {
+  const noiseCache: NoiseCache = {}
 
-  function ready() {
-    return engine && engine.ctx && engine.sfxGain
+  function ready(): boolean {
+    return !!(engine && engine.ctx && engine.sfxGain)
   }
 
   /** Play a one-shot noise burst through an optional filter. */
-  function noiseBurst({ start, duration = 0.15, peak = 0.6, type = 'lowpass', freq = 800, q = 1 }) {
-    const ctx = engine.ctx
+  function noiseBurst({
+    start,
+    duration = 0.15,
+    peak = 0.6,
+    type = 'lowpass',
+    freq = 800,
+    q = 1,
+  }: NoiseBurstOptions): void {
+    const ctx = engine.ctx!
     const src = ctx.createBufferSource()
     src.buffer = getNoiseBuffer(ctx, noiseCache, Math.max(0.25, duration + 0.05))
     const filter = ctx.createBiquadFilter()
     filter.type = type
     filter.frequency.setValueAtTime(freq, start)
     filter.Q.value = q
-    const g = envGain(ctx, engine.sfxGain, { peak, attack: 0.004, decay: duration, start })
+    const g = envGain(ctx, engine.sfxGain!, { peak, attack: 0.004, decay: duration, start })
     src.connect(filter)
     filter.connect(g)
     src.start(start)
@@ -66,15 +123,15 @@ export function createSfx(engine) {
     duration = 0.2,
     peak = 0.5,
     attack = 0.005,
-  }) {
-    const ctx = engine.ctx
+  }: ToneOptions): void {
+    const ctx = engine.ctx!
     const osc = ctx.createOscillator()
     osc.type = type
     osc.frequency.setValueAtTime(freqStart, start)
     if (freqEnd !== freqStart) {
       osc.frequency.exponentialRampToValueAtTime(Math.max(1, freqEnd), start + duration)
     }
-    const g = envGain(ctx, engine.sfxGain, { peak, attack, decay: duration, start })
+    const g = envGain(ctx, engine.sfxGain!, { peak, attack, decay: duration, start })
     osc.connect(g)
     osc.start(start)
     osc.stop(start + duration + 0.05)
@@ -135,7 +192,7 @@ export function createSfx(engine) {
     swish() {
       if (!ready()) return
       const t = engine.now()
-      const ctx = engine.ctx
+      const ctx = engine.ctx!
       const src = ctx.createBufferSource()
       src.buffer = getNoiseBuffer(ctx, noiseCache, 0.6)
       const filter = ctx.createBiquadFilter()
@@ -143,7 +200,7 @@ export function createSfx(engine) {
       filter.Q.value = 1.2
       filter.frequency.setValueAtTime(500, t)
       filter.frequency.exponentialRampToValueAtTime(2600, t + 0.3)
-      const g = envGain(ctx, engine.sfxGain, { peak: 0.18, attack: 0.05, decay: 0.3, start: t })
+      const g = envGain(ctx, engine.sfxGain!, { peak: 0.18, attack: 0.05, decay: 0.3, start: t })
       src.connect(filter)
       filter.connect(g)
       src.start(t)
@@ -158,26 +215,24 @@ export function createSfx(engine) {
  * A self-scheduling heartbeat "lub-dub" loop. Runs on a setTimeout timer (the
  * game loop isn't guaranteed while paused) and synthesizes two soft low thumps
  * per beat. Tempo is refreshed from a getter so it can speed up as HP drops.
- * @param {import('./engine.js').AudioEngine} engine
- * @param {() => number} getBpm returns current beats-per-minute
  */
-export function createHeartbeat(engine, getBpm) {
-  let timer = null
+export function createHeartbeat(engine: AudioEngine, getBpm: () => number): Heartbeat {
+  let timer: ReturnType<typeof setTimeout> | null = null
   let running = false
 
-  function thump(start, freq, peak) {
-    const ctx = engine.ctx
+  function thump(start: number, freq: number, peak: number): void {
+    const ctx = engine.ctx!
     const osc = ctx.createOscillator()
     osc.type = 'sine'
     osc.frequency.setValueAtTime(freq, start)
     osc.frequency.exponentialRampToValueAtTime(freq * 0.6, start + 0.12)
-    const g = envGain(ctx, engine.sfxGain, { peak, attack: 0.008, decay: 0.16, start })
+    const g = envGain(ctx, engine.sfxGain!, { peak, attack: 0.008, decay: 0.16, start })
     osc.connect(g)
     osc.start(start)
     osc.stop(start + 0.22)
   }
 
-  function beat() {
+  function beat(): void {
     if (!running) return
     if (engine.ctx && engine.sfxGain) {
       const t = engine.now()

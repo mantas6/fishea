@@ -2,8 +2,32 @@
 // Everything here works on plain {x, y, z} objects so it can be unit-tested
 // in a plain node environment without importing Three.js / WebGL.
 
+/** A plain 3D vector. The core geometric type shared across the game. */
+export interface Vec3 {
+  x: number
+  y: number
+  z: number
+}
+
+/** World bounds definition. */
+export interface WorldBounds {
+  radius: number
+  seafloorY: number
+  surfaceY: number
+  fishFloorMargin: number
+  fishSurfaceMargin: number
+}
+
+/** Tuning for the player's velocity model (thrust + water drag). */
+export interface PlayerMotion {
+  maxSpeed: number
+  sprintMultiplier: number
+  accelLambda: number
+  dragLambda: number
+}
+
 // World bounds — kept here so gameplay + rendering agree on the play space.
-export const WORLD = {
+export const WORLD: WorldBounds = {
   radius: 180, // max XZ distance from origin
   seafloorY: 0, // top of the sand
   surfaceY: 40, // water surface plane height
@@ -15,7 +39,7 @@ export const WORLD = {
 export const MAX_PITCH = 1.2 // radians (~69 degrees)
 
 // Tuning for the player's velocity model (thrust + water drag).
-export const PLAYER_MOTION = {
+export const PLAYER_MOTION: PlayerMotion = {
   maxSpeed: 8, // base cruise speed (units/s)
   sprintMultiplier: 1.8, // sprint multiplies max speed
   accelLambda: 4, // how quickly velocity ramps toward the desired velocity
@@ -24,11 +48,8 @@ export const PLAYER_MOTION = {
 
 /**
  * Clamp a pitch angle (radians) to the allowed range.
- * @param {number} pitch
- * @param {number} [maxPitch]
- * @returns {number}
  */
-export function clampPitch(pitch, maxPitch = MAX_PITCH) {
+export function clampPitch(pitch: number, maxPitch = MAX_PITCH): number {
   if (pitch > maxPitch) return maxPitch
   if (pitch < -maxPitch) return -maxPitch
   return pitch
@@ -36,10 +57,8 @@ export function clampPitch(pitch, maxPitch = MAX_PITCH) {
 
 /**
  * Wrap a yaw angle into (-PI, PI].
- * @param {number} yaw
- * @returns {number}
  */
-export function wrapAngle(yaw) {
+export function wrapAngle(yaw: number): number {
   const twoPi = Math.PI * 2
   let a = yaw % twoPi
   if (a <= -Math.PI) a += twoPi
@@ -50,11 +69,8 @@ export function wrapAngle(yaw) {
 /**
  * Convert yaw/pitch into a unit direction vector.
  * yaw is rotation about the Y axis (0 => facing -Z), pitch tilts up/down.
- * @param {number} yaw
- * @param {number} pitch
- * @returns {{x:number,y:number,z:number}}
  */
-export function headingToDirection(yaw, pitch) {
+export function headingToDirection(yaw: number, pitch: number): Vec3 {
   const cosPitch = Math.cos(pitch)
   return {
     x: -Math.sin(yaw) * cosPitch,
@@ -66,22 +82,15 @@ export function headingToDirection(yaw, pitch) {
 /**
  * Horizontal "right" (strafe) unit vector for a given yaw.
  * At yaw 0 the fish faces -Z, so its right is +X.
- * @param {number} yaw
- * @returns {{x:number,z:number}}
  */
-export function rightFromYaw(yaw) {
+export function rightFromYaw(yaw: number): { x: number; z: number } {
   return { x: Math.cos(yaw), z: -Math.sin(yaw) }
 }
 
 /**
  * Frame-rate independent exponential approach of a scalar toward a target.
- * @param {number} current
- * @param {number} target
- * @param {number} lambda higher = faster
- * @param {number} dt
- * @returns {number}
  */
-export function approach(current, target, lambda, dt) {
+export function approach(current: number, target: number, lambda: number, dt: number): number {
   return target + (current - target) * Math.exp(-lambda * dt)
 }
 
@@ -89,13 +98,13 @@ export function approach(current, target, lambda, dt) {
  * Step a velocity toward a desired velocity. Uses a faster rate while there's
  * input (thrust) and a slower rate when the desired velocity is zero (water
  * drag). Pure — returns a new object.
- * @param {{x:number,y:number,z:number}} velocity
- * @param {{x:number,y:number,z:number}} desired
- * @param {typeof PLAYER_MOTION} [opts]
- * @param {number} dt
- * @returns {{x:number,y:number,z:number}}
  */
-export function stepVelocity(velocity, desired, opts = PLAYER_MOTION, dt = 0) {
+export function stepVelocity(
+  velocity: Vec3,
+  desired: Vec3,
+  opts: PlayerMotion = PLAYER_MOTION,
+  dt = 0,
+): Vec3 {
   const moving = desired.x !== 0 || desired.y !== 0 || desired.z !== 0
   const lambda = moving ? opts.accelLambda : opts.dragLambda
   return {
@@ -110,13 +119,8 @@ export function stepVelocity(velocity, desired, opts = PLAYER_MOTION, dt = 0) {
  *  - move.z drives forward thrust along the full heading (includes pitch).
  *  - move.x strafes along the horizontal right vector.
  *  - move.y adds pure vertical thrust.
- * @param {{x:number,y:number,z:number}} move
- * @param {number} yaw
- * @param {number} pitch
- * @param {number} maxSpeed
- * @returns {{x:number,y:number,z:number}}
  */
-export function desiredVelocity(move, yaw, pitch, maxSpeed) {
+export function desiredVelocity(move: Vec3, yaw: number, pitch: number, maxSpeed: number): Vec3 {
   const dir = headingToDirection(yaw, pitch)
   const right = rightFromYaw(yaw)
   return {
@@ -128,12 +132,8 @@ export function desiredVelocity(move, yaw, pitch, maxSpeed) {
 
 /**
  * Integrate a position by a velocity over dt seconds. Pure — returns a new object.
- * @param {{x:number,y:number,z:number}} position
- * @param {{x:number,y:number,z:number}} velocity
- * @param {number} dt
- * @returns {{x:number,y:number,z:number}}
  */
-export function integrate(position, velocity, dt) {
+export function integrate(position: Vec3, velocity: Vec3, dt: number): Vec3 {
   return {
     x: position.x + velocity.x * dt,
     y: position.y + velocity.y * dt,
@@ -146,11 +146,8 @@ export function integrate(position, velocity, dt) {
  *  - y between (seafloorY + margin) and (surfaceY - margin)
  *  - XZ radial distance <= radius
  * Pure — returns a new clamped object.
- * @param {{x:number,y:number,z:number}} position
- * @param {typeof WORLD} [bounds]
- * @returns {{x:number,y:number,z:number}}
  */
-export function clampToBounds(position, bounds = WORLD) {
+export function clampToBounds(position: Vec3, bounds: WorldBounds = WORLD): Vec3 {
   const minY = bounds.seafloorY + bounds.fishFloorMargin
   const maxY = bounds.surfaceY - bounds.fishSurfaceMargin
 
@@ -170,11 +167,8 @@ export function clampToBounds(position, bounds = WORLD) {
 
 /**
  * Returns true when a position is within the play volume (inclusive).
- * @param {{x:number,y:number,z:number}} position
- * @param {typeof WORLD} [bounds]
- * @returns {boolean}
  */
-export function isWithinBounds(position, bounds = WORLD) {
+export function isWithinBounds(position: Vec3, bounds: WorldBounds = WORLD): boolean {
   const minY = bounds.seafloorY + bounds.fishFloorMargin
   const maxY = bounds.surfaceY - bounds.fishSurfaceMargin
   if (position.y < minY || position.y > maxY) return false

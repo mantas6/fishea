@@ -6,14 +6,40 @@
 
 import { AudioEngine } from './engine.js'
 import { createSfx, createHeartbeat } from './sfx.js'
+import type { Heartbeat, SfxKit } from './sfx.js'
 import { Music } from './music.js'
 import { heartbeatActive, heartbeatBpm } from './theory.js'
+import type { EventEmitter, Unsubscribe } from '../events.js'
+import type { HudSnapshot } from '../Game.js'
+
+export interface AudioManagerOptions {
+  muted?: boolean
+  engine?: AudioEngine
+}
+
+/** State surfaced to the HUD when audio unlock/mute changes. */
+export interface AudioState {
+  unlocked: boolean
+  muted: boolean
+}
+
+/** Anything the AudioManager can attach to (i.e. exposes an event bus). */
+export interface AudioAttachable {
+  events: EventEmitter
+}
 
 export class AudioManager {
-  /**
-   * @param {{muted?:boolean, engine?:AudioEngine}} [options]
-   */
-  constructor(options = {}) {
+  engine: AudioEngine
+  sfx: SfxKit
+  music: Music
+  heartbeat: Heartbeat
+  onStateChange: ((state: AudioState) => void) | null
+  private _hpFraction: number
+  private _heartbeatActive: boolean
+  private _unsubs: Unsubscribe[]
+  private _muted: boolean
+
+  constructor(options: AudioManagerOptions = {}) {
     this.engine = options.engine ?? new AudioEngine()
     this.sfx = createSfx(this.engine)
     this.music = new Music(this.engine)
@@ -22,7 +48,6 @@ export class AudioManager {
     this._heartbeatActive = false
     this.heartbeat = createHeartbeat(this.engine, () => heartbeatBpm(this._hpFraction))
 
-    /** @type {Array<() => void>} */
     this._unsubs = []
     this._muted = !!options.muted
 
@@ -40,15 +65,15 @@ export class AudioManager {
     })
   }
 
-  get unlocked() {
+  get unlocked(): boolean {
     return this.engine.unlocked
   }
 
-  get muted() {
+  get muted(): boolean {
     return this._muted
   }
 
-  _emitState() {
+  _emitState(): void {
     if (typeof this.onStateChange === 'function') {
       this.onStateChange({ unlocked: this.engine.unlocked, muted: this._muted })
     }
@@ -57,9 +82,8 @@ export class AudioManager {
   /**
    * Subscribe to a game's event emitter and wire events -> audio. Returns this
    * for chaining. Safe to call once per game instance.
-   * @param {{events: import('../events.js').EventEmitter}} game
    */
-  attach(game) {
+  attach(game: AudioAttachable): this {
     if (!game || !game.events) return this
     const ev = game.events
 
@@ -97,15 +121,14 @@ export class AudioManager {
     return this
   }
 
-  _setHeartbeat(active) {
+  _setHeartbeat(active: boolean): void {
     if (active === this._heartbeatActive) return
     this._heartbeatActive = active
     if (active) this.heartbeat.start()
     else this.heartbeat.stop()
   }
 
-  /** @param {boolean} value */
-  setMuted(value) {
+  setMuted(value: boolean): boolean {
     this._muted = !!value
     this.engine.setMuted(this._muted)
     if (this._muted) {
@@ -119,12 +142,12 @@ export class AudioManager {
     return this._muted
   }
 
-  toggleMute() {
+  toggleMute(): boolean {
     return this.setMuted(!this._muted)
   }
 
   /** Detach event handlers and tear down the audio graph. */
-  dispose() {
+  dispose(): void {
     for (const off of this._unsubs) off()
     this._unsubs.length = 0
     this.heartbeat.stop()

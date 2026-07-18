@@ -123,7 +123,10 @@ describe('wanderStep', () => {
   })
 })
 
-function vdist2(a, b) {
+function vdist2(
+  a: { x: number; y: number; z: number },
+  b: { x: number; y: number; z: number },
+): number {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z)
 }
 

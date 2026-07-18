@@ -3,13 +3,32 @@
 // screen. The root .hud is pointer-events:none so the canvas stays draggable;
 // only the interactive death panel re-enables pointer events.
 
-const BARS = [
+import type { HudSnapshot } from './game/Game.js'
+import type { DeathCause } from './game/events.js'
+import type { AudioState } from './game/audio/index.js'
+
+interface BarDef {
+  key: keyof HudSnapshot
+  label: string
+  className: string
+  max: keyof HudSnapshot
+}
+
+const BARS: BarDef[] = [
   { key: 'hp', label: 'Health', className: 'bar-hp', max: 'hpMax' },
   { key: 'hunger', label: 'Hunger', className: 'bar-hunger', max: 'hungerMax' },
   { key: 'stamina', label: 'Stamina', className: 'bar-stamina', max: 'staminaMax' },
 ]
 
-function Bar({ label, value, max, className, warn }) {
+interface BarProps {
+  label: string
+  value: number
+  max: number
+  className: string
+  warn?: boolean
+}
+
+function Bar({ label, value, max, className, warn }: BarProps) {
   const pct = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0
   return (
     <div className="stat-row">
@@ -25,14 +44,22 @@ function Bar({ label, value, max, className, warn }) {
   )
 }
 
-function deathCopy(cause) {
+function deathCopy(cause: DeathCause): { title: string; sub: string } {
   if (cause === 'starved') {
     return { title: 'You starved', sub: 'Nothing left to eat in the deep.' }
   }
   return { title: 'You were eaten', sub: 'A bigger fish got you.' }
 }
 
-export default function Hud({ snapshot, death, onRestart, audio, onToggleMute }) {
+interface HudProps {
+  snapshot: HudSnapshot | null
+  death: { cause: DeathCause } | null
+  onRestart: () => void
+  audio: AudioState
+  onToggleMute: () => void
+}
+
+export default function Hud({ snapshot, death, onRestart, audio, onToggleMute }: HudProps) {
   if (!snapshot) return null
 
   const device = snapshot.activeSource === 'gamepad' ? 'Gamepad' : 'Keyboard + mouse'
@@ -61,8 +88,8 @@ export default function Hud({ snapshot, death, onRestart, audio, onToggleMute })
           <Bar
             key={b.key}
             label={b.label}
-            value={snapshot[b.key]}
-            max={snapshot[b.max]}
+            value={snapshot[b.key] as number}
+            max={snapshot[b.max] as number}
             className={b.className}
             warn={b.key === 'stamina' && snapshot.exhausted}
           />

@@ -5,11 +5,26 @@ import { WORLD } from './movement.js'
 export const WATER_COLOR = 0x0a3a5c
 export const DEEP_COLOR = 0x04122b
 
+/** The built world: a root group plus a per-frame update and teardown. */
+export interface World {
+  root: THREE.Group
+  update: (dt: number) => void
+  dispose: () => void
+}
+
+/** A single swaying seaweed blade pivot with its animation params. */
+interface Seaweed {
+  pivot: THREE.Group
+  phase: number
+  freq: number
+  base: number
+}
+
 /**
  * Small deterministic value-noise so the seafloor looks the same each load
  * and does not depend on Math.random ordering.
  */
-function hashNoise(x, z) {
+function hashNoise(x: number, z: number): number {
   const s = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453
   return s - Math.floor(s)
 }
@@ -17,10 +32,8 @@ function hashNoise(x, z) {
 /**
  * Builds the entire static underwater environment and returns an object with
  * the root group plus an update(dt) for animated bits (swaying seaweed).
- * @param {THREE.Scene} scene
- * @returns {{ root: THREE.Group, update: (dt:number)=>void, dispose: ()=>void }}
  */
-export function createWorld(scene) {
+export function createWorld(scene: THREE.Scene): World {
   const root = new THREE.Group()
   root.name = 'world'
 
@@ -87,7 +100,7 @@ export function createWorld(scene) {
   for (let i = 0; i < surfacePos.count; i++) surfaceBaseY[i] = surfacePos.getY(i)
 
   // --- Decorations: rocks, seaweed, coral. Deterministic scatter.
-  const seaweed = [] // { pivot, phase, freq }
+  const seaweed: Seaweed[] = [] // { pivot, phase, freq }
   const rng = mulberry32(1337)
 
   const rockMat = new THREE.MeshStandardMaterial({
@@ -171,7 +184,7 @@ export function createWorld(scene) {
   scene.add(root)
 
   let t = 0
-  function update(dt) {
+  function update(dt: number): void {
     t += dt
     // Sway seaweed with a simple sine on rotation.
     for (const w of seaweed) {
@@ -187,11 +200,12 @@ export function createWorld(scene) {
     surfacePos.needsUpdate = true
   }
 
-  function dispose() {
+  function dispose(): void {
     root.traverse((obj) => {
-      if (obj.geometry) obj.geometry.dispose()
-      if (obj.material) {
-        const mats = Array.isArray(obj.material) ? obj.material : [obj.material]
+      const mesh = obj as THREE.Mesh
+      if (mesh.geometry) mesh.geometry.dispose()
+      if (mesh.material) {
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
         mats.forEach((m) => m.dispose())
       }
     })
@@ -205,7 +219,7 @@ export function createWorld(scene) {
 // --- helpers -------------------------------------------------------------
 
 /** Seeded PRNG so scatter is deterministic across reloads. */
-function mulberry32(seed) {
+function mulberry32(seed: number): () => number {
   let a = seed >>> 0
   return function () {
     a |= 0
@@ -217,14 +231,14 @@ function mulberry32(seed) {
 }
 
 /** Random point on the seafloor within a radius (avoids the very center). */
-function scatter(rng, radius) {
+function scatter(rng: () => number, radius: number): [number, number] {
   const ang = rng() * Math.PI * 2
   const r = 15 + rng() * (radius - 15)
   return [Math.cos(ang) * r, Math.sin(ang) * r]
 }
 
 /** Randomly push vertices outward/inward to give an organic silhouette. */
-function deform(geo, amount, rng) {
+function deform(geo: THREE.BufferGeometry, amount: number, rng: () => number): void {
   const pos = geo.attributes.position
   for (let i = 0; i < pos.count; i++) {
     const f = 1 + (rng() - 0.5) * amount

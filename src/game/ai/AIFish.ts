@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { FishMesh } from '../fish/FishMesh.js'
 import { WORLD, integrate, clampToBounds } from '../movement.js'
+import type { Vec3 } from '../movement.js'
 import {
   AI_CONFIG,
   makeRng,
@@ -11,6 +12,17 @@ import {
   wanderStep,
   vnorm,
 } from './behavior.js'
+import type { AiConfig, BehaviorMode, FishDescriptor, Rng } from './behavior.js'
+
+export interface AIFishOptions {
+  position?: Vec3
+  size?: number
+  color?: number
+  finColor?: number
+  bellyColor?: number
+  rng?: Rng
+  config?: AiConfig
+}
 
 // An AI fish entity: gameplay state (plain numbers so behavior.js stays pure)
 // plus a Three.js container wrapping a shared procedural FishMesh.
@@ -22,19 +34,23 @@ import {
 
 let _idCounter = 0
 
-export class AIFish {
-  /**
-   * @param {{
-   *   position:{x:number,y:number,z:number},
-   *   size:number,
-   *   color?:number,
-   *   finColor?:number,
-   *   bellyColor?:number,
-   *   rng?:() => number,
-   *   config?:typeof AI_CONFIG,
-   * }} options
-   */
-  constructor(options = {}) {
+export class AIFish implements FishDescriptor {
+  id: string
+  config: AiConfig
+  size: number
+  color: number
+  isPlayer: boolean
+  alive: boolean
+  mode: BehaviorMode
+  position: Vec3
+  velocity: Vec3
+  heading: Vec3
+  object3d: THREE.Group
+  fish: FishMesh
+  private _rng: Rng
+  private _align: THREE.Group
+
+  constructor(options: AIFishOptions = {}) {
     this.id = `ai-${_idCounter++}`
     this.config = options.config ?? AI_CONFIG
     this._rng = options.rng ?? makeRng((Math.random() * 0xffffffff) >>> 0)
@@ -74,28 +90,25 @@ export class AIFish {
   }
 
   /** Current speed magnitude (units/s). */
-  get currentSpeed() {
+  get currentSpeed(): number {
     return Math.hypot(this.velocity.x, this.velocity.y, this.velocity.z)
   }
 
   /**
    * Grow the fish to a new size (from eating). Updates the mesh scale.
-   * @param {number} newSize
    */
-  setSize(newSize) {
+  setSize(newSize: number): void {
     this.size = newSize
     this.fish.setSize(newSize)
   }
 
   /**
    * Advance one frame.
-   * @param {number} dt seconds
-   * @param {Array<{position:{x:number,y:number,z:number},size:number}>} neighbors
    */
-  update(dt, neighbors) {
-    const self = { position: this.position, size: this.size }
-    let dir
-    let speed
+  update(dt: number, neighbors: FishDescriptor[]): void {
+    const self: FishDescriptor = { position: this.position, size: this.size }
+    let dir: Vec3
+    let speed: number
 
     const threat = nearestThreat(self, neighbors, this.config)
     if (threat) {
@@ -126,7 +139,7 @@ export class AIFish {
   }
 
   /** Push gameplay state into the Three.js container, orienting along dir. */
-  _syncTransform(dir) {
+  _syncTransform(dir: Vec3): void {
     this.object3d.position.set(this.position.x, this.position.y, this.position.z)
     const d = vnorm(dir, this.heading)
     this.object3d.lookAt(
@@ -136,7 +149,7 @@ export class AIFish {
     )
   }
 
-  dispose() {
+  dispose(): void {
     this.fish.dispose()
   }
 }

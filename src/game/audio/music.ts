@@ -10,16 +10,32 @@
 // note envelopes; note *timing* uses setTimeout (fine for slow, sparse events).
 
 import { buildScale, pickNextNote } from './theory.js'
+import type { Rng } from './theory.js'
+import type { AudioEngine } from './engine.js'
+
+export interface MusicOptions {
+  rng?: Rng
+  rootFreq?: number
+}
 
 // Root of the pad/melody (A2). Low and calm.
 const ROOT_FREQ = 110
 
 export class Music {
-  /**
-   * @param {import('./engine.js').AudioEngine} engine
-   * @param {{rng?:() => number, rootFreq?:number}} [options]
-   */
-  constructor(engine, options = {}) {
+  engine: AudioEngine
+  rng: Rng
+  rootFreq: number
+  scale: number[]
+  private _running: boolean
+  private _noteTimer: ReturnType<typeof setTimeout> | null
+  private _prevNote: number | null
+  private _padOscs: OscillatorNode[]
+  private _padGain: GainNode | null
+  private _padFilter: BiquadFilterNode | null
+  private _lfo: OscillatorNode | null
+  private _lfoGain: GainNode | null
+
+  constructor(engine: AudioEngine, options: MusicOptions = {}) {
     this.engine = engine
     this.rng = options.rng ?? Math.random
     this.rootFreq = options.rootFreq ?? ROOT_FREQ
@@ -37,38 +53,42 @@ export class Music {
     this._lfoGain = null
   }
 
-  get running() {
+  get running(): boolean {
     return this._running
   }
 
   /** Build the sustained pad drone. */
-  _startPad() {
-    const ctx = this.engine.ctx
+  _startPad(): void {
+    const ctx = this.engine.ctx!
     const t = ctx.currentTime
 
-    this._padGain = ctx.createGain()
-    this._padGain.gain.setValueAtTime(0.0001, t)
-    this._padGain.gain.linearRampToValueAtTime(0.12, t + 4) // slow fade-in
-    this._padGain.connect(this.engine.musicGain)
+    const padGain = ctx.createGain()
+    padGain.gain.setValueAtTime(0.0001, t)
+    padGain.gain.linearRampToValueAtTime(0.12, t + 4) // slow fade-in
+    padGain.connect(this.engine.musicGain!)
+    this._padGain = padGain
 
-    this._padFilter = ctx.createBiquadFilter()
-    this._padFilter.type = 'lowpass'
-    this._padFilter.frequency.value = 480
-    this._padFilter.Q.value = 2
-    this._padFilter.connect(this._padGain)
+    const padFilter = ctx.createBiquadFilter()
+    padFilter.type = 'lowpass'
+    padFilter.frequency.value = 480
+    padFilter.Q.value = 2
+    padFilter.connect(padGain)
+    this._padFilter = padFilter
 
     // Slow LFO wobbling the filter cutoff.
-    this._lfo = ctx.createOscillator()
-    this._lfo.type = 'sine'
-    this._lfo.frequency.value = 0.06
-    this._lfoGain = ctx.createGain()
-    this._lfoGain.gain.value = 220
-    this._lfo.connect(this._lfoGain)
-    this._lfoGain.connect(this._padFilter.frequency)
-    this._lfo.start(t)
+    const lfo = ctx.createOscillator()
+    lfo.type = 'sine'
+    lfo.frequency.value = 0.06
+    const lfoGain = ctx.createGain()
+    lfoGain.gain.value = 220
+    lfo.connect(lfoGain)
+    lfoGain.connect(padFilter.frequency)
+    lfo.start(t)
+    this._lfo = lfo
+    this._lfoGain = lfoGain
 
     // Detuned oscillator stack around the root + a fifth.
-    const voices = [
+    const voices: Array<{ freq: number; detune: number; type: OscillatorType }> = [
       { freq: this.rootFreq, detune: -6, type: 'sine' },
       { freq: this.rootFreq, detune: +7, type: 'sine' },
       { freq: this.rootFreq * 1.5, detune: -4, type: 'triangle' },
@@ -78,14 +98,14 @@ export class Music {
       osc.type = v.type
       osc.frequency.value = v.freq
       osc.detune.value = v.detune
-      osc.connect(this._padFilter)
+      osc.connect(padFilter)
       osc.start(t)
       this._padOscs.push(osc)
     }
   }
 
   /** Schedule and play a single soft pluck, then queue the next. */
-  _scheduleNote() {
+  _scheduleNote(): void {
     if (!this._running) return
     const ctx = this.engine.ctx
     if (ctx && this.engine.musicGain) {
@@ -122,7 +142,7 @@ export class Music {
   }
 
   /** Start the pad + note scheduler. No-op if already running or not unlocked. */
-  start() {
+  start(): void {
     if (this._running) return
     if (!this.engine.ctx || !this.engine.musicGain) return
     this._running = true
@@ -132,7 +152,7 @@ export class Music {
   }
 
   /** Stop everything and tear down the pad graph. */
-  stop() {
+  stop(): void {
     if (!this._running) return
     this._running = false
     if (this._noteTimer != null) {

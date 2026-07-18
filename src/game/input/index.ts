@@ -14,13 +14,22 @@ import { KeyboardInput } from './keyboard.js'
 import { MouseInput } from './mouse.js'
 import { GamepadInput } from './gamepad.js'
 import { keysToMove, mergeInputSources, neutralState } from './normalize.js'
+import type { ActiveSource, NormalizedInputState, SourceState } from './normalize.js'
+
+export interface InputManagerOptions {
+  deadzone?: number
+  mouseSensitivity?: number
+  gamepadLookSpeed?: number
+}
 
 export class InputManager {
-  /**
-   * @param {HTMLElement} canvas canvas element for pointer-lock mouse look
-   * @param {{deadzone?:number,mouseSensitivity?:number,gamepadLookSpeed?:number}} [options]
-   */
-  constructor(canvas, options = {}) {
+  keyboard: KeyboardInput
+  mouse: MouseInput
+  gamepad: GamepadInput
+  lastActive: ActiveSource
+  state: NormalizedInputState
+
+  constructor(canvas: HTMLElement | null, options: InputManagerOptions = {}) {
     this.keyboard = new KeyboardInput()
     this.mouse = new MouseInput(canvas, { sensitivity: options.mouseSensitivity })
     this.gamepad = new GamepadInput({
@@ -35,10 +44,8 @@ export class InputManager {
 
   /**
    * Poll all sources, merge, and update the current state.
-   * @param {number} dt seconds
-   * @returns {typeof this.state}
    */
-  update(dt) {
+  update(dt: number): NormalizedInputState {
     const gamepad = this.gamepad.getState(dt)
     const keyboardMouse = this._readKeyboardMouse()
 
@@ -48,7 +55,7 @@ export class InputManager {
     return merged
   }
 
-  _readKeyboardMouse() {
+  _readKeyboardMouse(): SourceState {
     const keys = this.keyboard.getState()
     return {
       move: keysToMove(keys),
@@ -59,16 +66,16 @@ export class InputManager {
   }
 
   /** The most recent merged input state. */
-  getState() {
+  getState(): NormalizedInputState {
     return this.state
   }
 
   /** Whether a gamepad is currently connected. */
-  get gamepadConnected() {
+  get gamepadConnected(): boolean {
     return this.gamepad.connected
   }
 
-  dispose() {
+  dispose(): void {
     this.keyboard.dispose()
     this.mouse.dispose()
     this.gamepad.dispose()

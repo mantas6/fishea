@@ -10,22 +10,40 @@
 //
 // Muting just ramps masterGain to 0 without tearing down the graph.
 
+export interface AudioEngineOptions {
+  masterVolume?: number
+  musicVolume?: number
+  sfxVolume?: number
+}
+
+type AudioContextCtor = new () => AudioContext
+
 /** Resolve the AudioContext constructor, or null when unavailable (node). */
-function getAudioContextCtor() {
+function getAudioContextCtor(): AudioContextCtor | null {
   if (typeof window === 'undefined') return null
-  return window.AudioContext || window.webkitAudioContext || null
+  const w = window as typeof window & { webkitAudioContext?: AudioContextCtor }
+  return w.AudioContext || w.webkitAudioContext || null
 }
 
 export class AudioEngine {
-  /**
-   * @param {{masterVolume?:number, musicVolume?:number, sfxVolume?:number}} [options]
-   */
-  constructor(options = {}) {
+  masterVolume: number
+  musicVolume: number
+  sfxVolume: number
+  ctx: AudioContext | null
+  master: GainNode | null
+  musicGain: GainNode | null
+  sfxGain: GainNode | null
+  private _muted: boolean
+  private _unlocked: boolean
+  private _unlockListeners: Array<() => void>
+  private _gestureBound: boolean
+  private _gestureTarget?: EventTarget | null
+
+  constructor(options: AudioEngineOptions = {}) {
     this.masterVolume = options.masterVolume ?? 0.7
     this.musicVolume = options.musicVolume ?? 0.35
     this.sfxVolume = options.sfxVolume ?? 0.9
 
-    /** @type {AudioContext|null} */
     this.ctx = null
     this.master = null
     this.musicGain = null
@@ -33,7 +51,6 @@ export class AudioEngine {
 
     this._muted = false
     this._unlocked = false
-    /** @type {Array<() => void>} listeners fired once the context unlocks */
     this._unlockListeners = []
 
     // Bound so we can add/remove the same reference.
@@ -44,9 +61,8 @@ export class AudioEngine {
   /**
    * Arm one-shot gesture listeners so the context is created on the first
    * pointerdown/keydown. Safe to call when there's no DOM (no-op).
-   * @param {EventTarget} [target]
    */
-  armGestureUnlock(target = typeof window !== 'undefined' ? window : null) {
+  armGestureUnlock(target: EventTarget | null = typeof window !== 'undefined' ? window : null): void {
     if (!target || this._gestureBound || this._unlocked) return
     this._gestureTarget = target
     target.addEventListener('pointerdown', this._onGesture)
@@ -55,7 +71,7 @@ export class AudioEngine {
     this._gestureBound = true
   }
 
-  _removeGestureListeners() {
+  _removeGestureListeners(): void {
     if (!this._gestureBound || !this._gestureTarget) return
     this._gestureTarget.removeEventListener('pointerdown', this._onGesture)
     this._gestureTarget.removeEventListener('keydown', this._onGesture)
@@ -63,7 +79,7 @@ export class AudioEngine {
     this._gestureBound = false
   }
 
-  _onGesture() {
+  _onGesture(): void {
     this.unlock()
   }
 
@@ -71,9 +87,8 @@ export class AudioEngine {
    * Create (once) and resume the AudioContext + gain buses. Returns true when
    * the context is available and running. Called from the gesture handler but
    * also safe to call directly.
-   * @returns {boolean}
    */
-  unlock() {
+  unlock(): boolean {
     const Ctor = getAudioContextCtor()
     if (!Ctor) return false
 
@@ -118,7 +133,7 @@ export class AudioEngine {
   }
 
   /** Register a callback fired once when the context unlocks (or now if it already has). */
-  onUnlock(fn) {
+  onUnlock(fn: () => void): void {
     if (this._unlocked) {
       fn()
       return
@@ -126,24 +141,23 @@ export class AudioEngine {
     this._unlockListeners.push(fn)
   }
 
-  get unlocked() {
+  get unlocked(): boolean {
     return this._unlocked
   }
 
   /** Current AudioContext time, or 0 when no context exists. */
-  now() {
+  now(): number {
     return this.ctx ? this.ctx.currentTime : 0
   }
 
-  get muted() {
+  get muted(): boolean {
     return this._muted
   }
 
   /**
    * Mute/unmute by ramping the master bus. Persists across (re)unlock.
-   * @param {boolean} value
    */
-  setMuted(value) {
+  setMuted(value: boolean): boolean {
     this._muted = !!value
     if (this.master && this.ctx) {
       const t = this.ctx.currentTime
@@ -155,12 +169,12 @@ export class AudioEngine {
     return this._muted
   }
 
-  toggleMute() {
+  toggleMute(): boolean {
     return this.setMuted(!this._muted)
   }
 
   /** Tear down listeners and close the context. */
-  dispose() {
+  dispose(): void {
     this._removeGestureListeners()
     this._unlockListeners.length = 0
     if (this.ctx) {

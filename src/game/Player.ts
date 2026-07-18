@@ -11,16 +11,37 @@ import {
   desiredVelocity,
   stepVelocity,
 } from './movement.js'
+import type { Vec3 } from './movement.js'
+import type { SourceState } from './input/normalize.js'
 
 // The player fish entity: owns gameplay state (position/velocity/heading/size)
 // and a Three.js container object for rendering. Motion is driven by the
 // normalized input state produced by the InputManager (see applyInput).
 
+export interface PlayerOptions {
+  size?: number
+  color?: number
+  speed?: number
+  sprintMultiplier?: number
+}
+
 export class Player {
-  /**
-   * @param {Partial<{size:number,color:number,speed:number,sprintMultiplier:number}>} [options]
-   */
-  constructor(options = {}) {
+  size: number
+  speed: number
+  sprintMultiplier: number
+  color: number
+  position: Vec3
+  velocity: Vec3
+  yaw: number
+  pitch: number
+  bite: boolean
+  sprinting: boolean
+  object3d: THREE.Group
+  fish: FishMesh
+  private _t: number
+  private _align: THREE.Group
+
+  constructor(options: PlayerOptions = {}) {
     this.size = options.size ?? 1
     this.speed = options.speed ?? PLAYER_MOTION.maxSpeed // base cruise speed (units/s)
     this.sprintMultiplier = options.sprintMultiplier ?? PLAYER_MOTION.sprintMultiplier
@@ -55,17 +76,14 @@ export class Player {
   }
 
   /** Current speed magnitude (units/s). */
-  get currentSpeed() {
+  get currentSpeed(): number {
     return Math.hypot(this.velocity.x, this.velocity.y, this.velocity.z)
   }
 
   /**
    * Drive the fish from a normalized input state for one frame.
-   * @param {{move:{x:number,y:number,z:number},look:{x:number,y:number},sprint:boolean,bite:boolean}} input
-   * @param {number} dt seconds
-   * @param {boolean} [sprintAllowed] gate for sprint (stamina lands in a later task)
    */
-  applyInput(input, dt, sprintAllowed = true) {
+  applyInput(input: SourceState, dt: number, sprintAllowed = true): void {
     this._t += dt
 
     // Steer: look deltas are already scaled to radians for this frame.
@@ -87,7 +105,7 @@ export class Player {
   }
 
   /** Push gameplay state into the Three.js container. */
-  _syncTransform() {
+  _syncTransform(): void {
     this.object3d.position.set(this.position.x, this.position.y, this.position.z)
     const dir = headingToDirection(this.yaw, this.pitch)
     this.object3d.lookAt(
@@ -97,7 +115,7 @@ export class Player {
     )
   }
 
-  dispose() {
+  dispose(): void {
     this.fish.dispose()
   }
 }
