@@ -79,7 +79,7 @@ export default function Hud({ snapshot, death, onRestart, audio, onToggleMute }:
           Sound: {muted ? 'off' : 'on'}
         </button>
         {!unlocked && !muted ? (
-          <span className="hud-audio-hint">click to enable sound</span>
+          <span className="hud-audio-hint">tap/click to enable sound</span>
         ) : null}
       </div>
 
