@@ -223,3 +223,60 @@ body {
   font-size: 12px;
   color: rgba(200, 226, 255, 0.45);
 }
+
+/* --- Audio / mute control (top-right) ----------------------------------- */
+
+.hud-audio {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hud-mute {
+  pointer-events: auto;
+  cursor: pointer;
+  border: 1px solid rgba(120, 200, 255, 0.25);
+  border-radius: 10px;
+  padding: 7px 14px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(232, 241, 255, 0.9);
+  background: rgba(4, 16, 34, 0.55);
+  backdrop-filter: blur(6px);
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.hud-mute:hover {
+  border-color: rgba(120, 200, 255, 0.5);
+  color: #9be1ff;
+}
+
+.hud-mute[aria-pressed='true'] {
+  color: rgba(200, 226, 255, 0.5);
+}
+
+.hud-mute:focus-visible {
+  outline: 2px solid #9be1ff;
+  outline-offset: 3px;
+}
+
+.hud-audio-hint {
+  font-size: 11px;
+  color: rgba(200, 226, 255, 0.6);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  animation: hud-hint-pulse 2s ease-in-out infinite;
+}
+
+@keyframes hud-hint-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}

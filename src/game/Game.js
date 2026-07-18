@@ -6,6 +6,7 @@ import { InputManager } from './input/index.js'
 import { EventEmitter } from './events.js'
 import { Spawner } from './ai/spawner.js'
 import { createStats, tickStats, eat, damage, sprintAllowed } from './stats.js'
+import { AudioManager } from './audio/index.js'
 
 // Owns the Three.js renderer, scene, camera, clock, and the RAF loop.
 // All WebGL/DOM work lives here so the pure modules stay test-friendly.
@@ -88,6 +89,12 @@ export class Game {
     // Input: keyboard/mouse + gamepad, merged into one state each frame.
     this.input = new InputManager(this.renderer.domElement)
 
+    // Procedural audio (SFX + generative ambient music). The AudioContext is
+    // created lazily on the first user gesture, so this is safe to construct
+    // here; it just subscribes to the event bus.
+    this.audio = new AudioManager()
+    this.audio.attach(this)
+
     // Smoothed camera state.
     this._camPos = { x: this.camera.position.x, y: this.camera.position.y, z: this.camera.position.z }
     this._camLook = { x: 0, y: 20, z: 0 }
@@ -168,6 +175,7 @@ export class Game {
       size: this.player.size,
       activeSource: this._activeSource,
       alive: this.alive,
+      sprinting: this.alive && this.player.sprinting && this.player.currentSpeed > 0.5,
     }
     if (typeof this.onHudUpdate === 'function') this.onHudUpdate(snapshot)
     this.events.emit('hud', snapshot)
@@ -238,6 +246,7 @@ export class Game {
     for (const unsub of this._unsubs) unsub()
     this._unsubs.length = 0
 
+    this.audio.dispose()
     this.input.dispose()
     this.spawner.dispose()
     this.player.dispose()

@@ -1,0 +1,210 @@
+// Procedural sound effects synthesized on the fly with oscillators, noise
+// buffers, filters and gain envelopes — no external audio assets. Each factory
+// takes an AudioEngine and returns a small object with trigger methods. All
+// nodes are one-shot: they're created per hit and stop themselves so there's
+// nothing to garbage collect manually.
+
+// --- Low-level building blocks --------------------------------------------
+
+/** Build (and cache) a mono white-noise buffer of `seconds` length. */
+function getNoiseBuffer(ctx, cache, seconds = 1) {
+  const key = `noise:${seconds}`
+  if (cache[key]) return cache[key]
+  const length = Math.max(1, Math.floor(ctx.sampleRate * seconds))
+  const buffer = ctx.createBuffer(1, length, ctx.sampleRate)
+  const data = buffer.getChannelData(0)
+  for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1
+  cache[key] = buffer
+  return buffer
+}
+
+/** A quick percussive gain envelope (attack -> exponential decay). */
+function envGain(ctx, dest, { peak = 1, attack = 0.005, decay = 0.2, start }) {
+  const g = ctx.createGain()
+  const t = start
+  g.gain.setValueAtTime(0.0001, t)
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak), t + attack)
+  g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay)
+  g.connect(dest)
+  return g
+}
+
+/**
+ * Create the procedural SFX kit bound to an AudioEngine. Every trigger is a
+ * no-op until the engine is unlocked (has a live context + sfx bus).
+ * @param {import('./engine.js').AudioEngine} engine
+ */
+export function createSfx(engine) {
+  const noiseCache = {}
+
+  function ready() {
+    return engine && engine.ctx && engine.sfxGain
+  }
+
+  /** Play a one-shot noise burst through an optional filter. */
+  function noiseBurst({ start, duration = 0.15, peak = 0.6, type = 'lowpass', freq = 800, q = 1 }) {
+    const ctx = engine.ctx
+    const src = ctx.createBufferSource()
+    src.buffer = getNoiseBuffer(ctx, noiseCache, Math.max(0.25, duration + 0.05))
+    const filter = ctx.createBiquadFilter()
+    filter.type = type
+    filter.frequency.setValueAtTime(freq, start)
+    filter.Q.value = q
+    const g = envGain(ctx, engine.sfxGain, { peak, attack: 0.004, decay: duration, start })
+    src.connect(filter)
+    filter.connect(g)
+    src.start(start)
+    src.stop(start + duration + 0.1)
+  }
+
+  /** Play a one-shot oscillator tone with a pitch sweep + amp envelope. */
+  function tone({
+    start,
+    type = 'sine',
+    freqStart = 440,
+    freqEnd = freqStart,
+    duration = 0.2,
+    peak = 0.5,
+    attack = 0.005,
+  }) {
+    const ctx = engine.ctx
+    const osc = ctx.createOscillator()
+    osc.type = type
+    osc.frequency.setValueAtTime(freqStart, start)
+    if (freqEnd !== freqStart) {
+      osc.frequency.exponentialRampToValueAtTime(Math.max(1, freqEnd), start + duration)
+    }
+    const g = envGain(ctx, engine.sfxGain, { peak, attack, decay: duration, start })
+    osc.connect(g)
+    osc.start(start)
+    osc.stop(start + duration + 0.05)
+  }
+
+  return {
+    /** Bite/chomp: short filtered noise burst layered with a low thump. */
+    bite() {
+      if (!ready()) return
+      const t = engine.now()
+      noiseBurst({ start: t, duration: 0.12, peak: 0.5, type: 'bandpass', freq: 1400, q: 0.8 })
+      tone({ start: t, type: 'sine', freqStart: 160, freqEnd: 55, duration: 0.14, peak: 0.6 })
+    },
+
+    /** Eat success: a bright rising blip. */
+    eat() {
+      if (!ready()) return
+      const t = engine.now()
+      tone({ start: t, type: 'triangle', freqStart: 420, freqEnd: 880, duration: 0.16, peak: 0.5 })
+      tone({ start: t + 0.02, type: 'sine', freqStart: 660, freqEnd: 1200, duration: 0.14, peak: 0.28 })
+    },
+
+    /** Bite miss: a dull, muffled thud/whiff. */
+    miss() {
+      if (!ready()) return
+      const t = engine.now()
+      noiseBurst({ start: t, duration: 0.18, peak: 0.28, type: 'lowpass', freq: 320, q: 0.7 })
+      tone({ start: t, type: 'sine', freqStart: 120, freqEnd: 70, duration: 0.16, peak: 0.22 })
+    },
+
+    /** Player hurt: harsh downward sweep. */
+    hurt() {
+      if (!ready()) return
+      const t = engine.now()
+      tone({ start: t, type: 'sawtooth', freqStart: 520, freqEnd: 90, duration: 0.32, peak: 0.5 })
+      noiseBurst({ start: t, duration: 0.12, peak: 0.2, type: 'highpass', freq: 900, q: 0.6 })
+    },
+
+    /** Death sting: short descending minor phrase (root, b3, root-octave-down). */
+    death() {
+      if (!ready()) return
+      const t = engine.now()
+      const notes = [440, 523.25, 349.23, 220]
+      notes.forEach((f, i) => {
+        tone({
+          start: t + i * 0.14,
+          type: 'triangle',
+          freqStart: f,
+          freqEnd: f,
+          duration: 0.28,
+          peak: 0.4,
+          attack: 0.01,
+        })
+      })
+    },
+
+    /** Sprint start: subtle rising bubbly swish. */
+    swish() {
+      if (!ready()) return
+      const t = engine.now()
+      const ctx = engine.ctx
+      const src = ctx.createBufferSource()
+      src.buffer = getNoiseBuffer(ctx, noiseCache, 0.6)
+      const filter = ctx.createBiquadFilter()
+      filter.type = 'bandpass'
+      filter.Q.value = 1.2
+      filter.frequency.setValueAtTime(500, t)
+      filter.frequency.exponentialRampToValueAtTime(2600, t + 0.3)
+      const g = envGain(ctx, engine.sfxGain, { peak: 0.18, attack: 0.05, decay: 0.3, start: t })
+      src.connect(filter)
+      filter.connect(g)
+      src.start(t)
+      src.stop(t + 0.45)
+    },
+  }
+}
+
+// --- Low-HP heartbeat loop -------------------------------------------------
+
+/**
+ * A self-scheduling heartbeat "lub-dub" loop. Runs on a setTimeout timer (the
+ * game loop isn't guaranteed while paused) and synthesizes two soft low thumps
+ * per beat. Tempo is refreshed from a getter so it can speed up as HP drops.
+ * @param {import('./engine.js').AudioEngine} engine
+ * @param {() => number} getBpm returns current beats-per-minute
+ */
+export function createHeartbeat(engine, getBpm) {
+  let timer = null
+  let running = false
+
+  function thump(start, freq, peak) {
+    const ctx = engine.ctx
+    const osc = ctx.createOscillator()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(freq, start)
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.6, start + 0.12)
+    const g = envGain(ctx, engine.sfxGain, { peak, attack: 0.008, decay: 0.16, start })
+    osc.connect(g)
+    osc.start(start)
+    osc.stop(start + 0.22)
+  }
+
+  function beat() {
+    if (!running) return
+    if (engine.ctx && engine.sfxGain) {
+      const t = engine.now()
+      thump(t, 60, 0.5) // "lub"
+      thump(t + 0.16, 48, 0.32) // "dub"
+    }
+    const bpm = Math.max(30, getBpm() || 60)
+    timer = setTimeout(beat, (60 / bpm) * 1000)
+  }
+
+  return {
+    get running() {
+      return running
+    },
+    start() {
+      if (running) return
+      running = true
+      beat()
+    },
+    stop() {
+      running = false
+      if (timer != null) {
+        clearTimeout(timer)
+        timer = null
+      }
+    },
+  }
+}
+
+export default { createSfx, createHeartbeat }

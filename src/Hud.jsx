@@ -32,13 +32,30 @@ function deathCopy(cause) {
   return { title: 'You were eaten', sub: 'A bigger fish got you.' }
 }
 
-export default function Hud({ snapshot, death, onRestart }) {
+export default function Hud({ snapshot, death, onRestart, audio, onToggleMute }) {
   if (!snapshot) return null
 
   const device = snapshot.activeSource === 'gamepad' ? 'Gamepad' : 'Keyboard + mouse'
+  const muted = audio?.muted
+  const unlocked = audio?.unlocked
 
   return (
     <>
+      <div className="hud-audio">
+        <button
+          type="button"
+          className="hud-mute"
+          onClick={onToggleMute}
+          aria-pressed={muted ? 'true' : 'false'}
+          title="Toggle sound (M)"
+        >
+          Sound: {muted ? 'off' : 'on'}
+        </button>
+        {!unlocked && !muted ? (
+          <span className="hud-audio-hint">click to enable sound</span>
+        ) : null}
+      </div>
+
       <div className="hud-panel hud-stats" aria-hidden={death ? 'true' : 'false'}>
         {BARS.map((b) => (
           <Bar

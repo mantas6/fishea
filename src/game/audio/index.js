@@ -1,0 +1,136 @@
+// AudioManager: the single glue object the game talks to. It owns the audio
+// engine, the procedural SFX kit, the heartbeat loop and the generative music,
+// and maps gameplay events onto them. Importing this module never constructs an
+// AudioContext (the engine defers that to the first user gesture), so it's safe
+// under the node test environment.
+
+import { AudioEngine } from './engine.js'
+import { createSfx, createHeartbeat } from './sfx.js'
+import { Music } from './music.js'
+import { heartbeatActive, heartbeatBpm } from './theory.js'
+
+export class AudioManager {
+  /**
+   * @param {{muted?:boolean, engine?:AudioEngine}} [options]
+   */
+  constructor(options = {}) {
+    this.engine = options.engine ?? new AudioEngine()
+    this.sfx = createSfx(this.engine)
+    this.music = new Music(this.engine)
+
+    this._hpFraction = 1
+    this._heartbeatActive = false
+    this.heartbeat = createHeartbeat(this.engine, () => heartbeatBpm(this._hpFraction))
+
+    /** @type {Array<() => void>} */
+    this._unsubs = []
+    this._muted = !!options.muted
+
+    // Callback fired whenever the enabled/unlocked state changes so a HUD can
+    // reflect it. Set by the host (App).
+    this.onStateChange = null
+
+    // Arm the gesture unlock immediately; harmless in node (no window).
+    this.engine.armGestureUnlock()
+    this.engine.setMuted(this._muted)
+    this.engine.onUnlock(() => {
+      // Music only makes sense once we actually have a live context.
+      if (!this._muted) this.music.start()
+      this._emitState()
+    })
+  }
+
+  get unlocked() {
+    return this.engine.unlocked
+  }
+
+  get muted() {
+    return this._muted
+  }
+
+  _emitState() {
+    if (typeof this.onStateChange === 'function') {
+      this.onStateChange({ unlocked: this.engine.unlocked, muted: this._muted })
+    }
+  }
+
+  /**
+   * Subscribe to a game's event emitter and wire events -> audio. Returns this
+   * for chaining. Safe to call once per game instance.
+   * @param {{events: import('../events.js').EventEmitter}} game
+   */
+  attach(game) {
+    if (!game || !game.events) return this
+    const ev = game.events
+
+    let prevSprinting = false
+
+    this._unsubs.push(
+      ev.on('player-ate', () => this.sfx.eat()),
+      ev.on('player-bitten', () => this.sfx.hurt()),
+      ev.on('fish-eaten', () => this.sfx.bite()),
+      ev.on('bite-missed', () => this.sfx.miss()),
+      ev.on('player-died', () => {
+        this.sfx.death()
+        this._setHeartbeat(false)
+      }),
+      ev.on('player-respawned', () => {
+        this._hpFraction = 1
+        this._setHeartbeat(false)
+      }),
+      ev.on('hud', (snap) => {
+        if (!snap) return
+        // Chomp when the player bites (edge-triggered via a dedicated event is
+        // cleaner, but 'player-ate' already covers hits; nothing to do here).
+        const frac = snap.hpMax > 0 ? snap.hp / snap.hpMax : 1
+        this._hpFraction = frac
+
+        // Heartbeat hysteresis: only while alive.
+        const shouldBeat = snap.alive && heartbeatActive(this._heartbeatActive, frac)
+        this._setHeartbeat(shouldBeat)
+
+        // Sprint-start swish (rising edge of the sprinting flag).
+        if (snap.sprinting && !prevSprinting) this.sfx.swish()
+        prevSprinting = !!snap.sprinting
+      }),
+    )
+    return this
+  }
+
+  _setHeartbeat(active) {
+    if (active === this._heartbeatActive) return
+    this._heartbeatActive = active
+    if (active) this.heartbeat.start()
+    else this.heartbeat.stop()
+  }
+
+  /** @param {boolean} value */
+  setMuted(value) {
+    this._muted = !!value
+    this.engine.setMuted(this._muted)
+    if (this._muted) {
+      this.music.stop()
+      this.heartbeat.stop()
+      this._heartbeatActive = false
+    } else if (this.engine.unlocked) {
+      this.music.start()
+    }
+    this._emitState()
+    return this._muted
+  }
+
+  toggleMute() {
+    return this.setMuted(!this._muted)
+  }
+
+  /** Detach event handlers and tear down the audio graph. */
+  dispose() {
+    for (const off of this._unsubs) off()
+    this._unsubs.length = 0
+    this.heartbeat.stop()
+    this.music.stop()
+    this.engine.dispose()
+  }
+}
+
+export default AudioManager

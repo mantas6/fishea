@@ -19,6 +19,17 @@ Eat smaller fish to grow and stay fed; avoid bigger fish that bite. The HUD
 Get eaten or starve and a game-over screen appears — hit **Swim again** (or
 press **Enter**) to restart with a fresh ocean.
 
+## Audio
+
+All sound is generated at runtime with the Web Audio API — there are no audio
+assets. Procedural SFX cover biting, eating, missed bites, taking damage, a
+death sting and a sprint swish, plus a tension heartbeat that fades in when
+health drops below 30%. A generative ambient track (slow detuned pads under a
+wandering lowpass filter, with sparse pentatonic plucks) plays underneath.
+
+Sound is enabled on your first click/keypress (browser autoplay policy). Toggle
+it with the **Sound: on/off** button (top-right) or the **M** key.
+
 ## Controls
 
 A connected controller takes priority automatically whenever it's in use;
@@ -35,6 +46,7 @@ last-used input.
 | Swim down | `Ctrl` or `C`                      |
 | Sprint    | `Shift` (hold)                     |
 | Bite/eat  | Left mouse button                  |
+| Mute      | `M`                                |
 
 ### PS4 / DualShock controller
 

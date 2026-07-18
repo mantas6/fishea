@@ -6,6 +6,7 @@ export default function App() {
   const gameRef = useRef(null)
   const [hud, setHud] = useState(null)
   const [death, setDeath] = useState(null)
+  const [audio, setAudio] = useState({ unlocked: false, muted: false })
 
   useEffect(() => {
     const container = document.getElementById('game')
@@ -13,6 +14,10 @@ export default function App() {
 
     const game = new Game(container)
     gameRef.current = game
+
+    // Reflect audio unlock/mute state in the HUD.
+    game.audio.onStateChange = (state) => setAudio(state)
+    setAudio({ unlocked: game.audio.unlocked, muted: game.audio.muted })
 
     const unsubs = [
       game.events.on('hud', (snapshot) => setHud(snapshot)),
@@ -34,6 +39,25 @@ export default function App() {
     setDeath(null)
   }, [])
 
+  const handleToggleMute = useCallback(() => {
+    const game = gameRef.current
+    if (!game) return
+    const muted = game.audio.toggleMute()
+    setAudio({ unlocked: game.audio.unlocked, muted })
+  }, [])
+
+  // M key toggles mute anywhere in the game.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'm' || e.key === 'M') {
+        e.preventDefault()
+        handleToggleMute()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [handleToggleMute])
+
   // Let Enter restart from the death screen (mouse is pointer-locked mid-game).
   useEffect(() => {
     if (!death) return undefined
@@ -51,7 +75,13 @@ export default function App() {
     <div className="app">
       <div id="game" className="game-canvas" />
       <div id="hud" className="hud">
-        <Hud snapshot={hud} death={death} onRestart={handleRestart} />
+        <Hud
+          snapshot={hud}
+          death={death}
+          onRestart={handleRestart}
+          audio={audio}
+          onToggleMute={handleToggleMute}
+        />
       </div>
     </div>
   )
