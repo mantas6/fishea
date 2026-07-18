@@ -138,6 +138,15 @@ export class FishMesh {
     this.finRight.rotation.x = -0.4 - flutter
   }
 
+  /**
+   * Rescale the whole fish. Used when a fish grows after eating.
+   * @param {number} size
+   */
+  setSize(size) {
+    this.options.size = size
+    this.group.scale.setScalar(size)
+  }
+
   /** Free GPU resources. */
   dispose() {
     this.group.traverse((obj) => {

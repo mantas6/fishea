@@ -3,6 +3,8 @@ import { createWorld, DEEP_COLOR } from './world.js'
 import { Player } from './Player.js'
 import { computeCameraTarget, dampVector, CAMERA_DEFAULTS } from './camera.js'
 import { InputManager } from './input/index.js'
+import { EventEmitter } from './events.js'
+import { Spawner } from './ai/spawner.js'
 
 // Owns the Three.js renderer, scene, camera, clock, and the RAF loop.
 // All WebGL/DOM work lives here so the pure modules stay test-friendly.
@@ -35,6 +37,19 @@ export class Game {
     this.world = createWorld(this.scene)
     this.player = new Player({ size: 1.6 })
     this.scene.add(this.player.object3d)
+
+    // Gameplay event bus. Later systems (stats HUD, audio) subscribe here.
+    // Emitted events: 'fish-spawned', 'fish-despawned', 'fish-eaten',
+    // 'player-ate', 'player-bitten', 'bite-missed'.
+    this.events = new EventEmitter()
+
+    // AI fish population + eating mechanics.
+    this.spawner = new Spawner({
+      scene: this.scene,
+      player: this.player,
+      events: this.events,
+    })
+    this.spawner.seed()
 
     // Input: keyboard/mouse + gamepad, merged into one state each frame.
     this.input = new InputManager(this.renderer.domElement)
@@ -75,6 +90,7 @@ export class Game {
 
     const input = this.input.update(dt)
     this.player.applyInput(input, dt)
+    this.spawner.update(dt)
     this.world.update(dt)
     this._updateCamera(dt)
 
@@ -109,6 +125,7 @@ export class Game {
     window.removeEventListener('resize', this._onResize)
 
     this.input.dispose()
+    this.spawner.dispose()
     this.player.dispose()
     this.world.dispose()
 

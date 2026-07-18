@@ -1,0 +1,322 @@
+import * as THREE from 'three'
+import { WORLD, clampToBounds, headingToDirection } from '../movement.js'
+import { AIFish } from './AIFish.js'
+import {
+  AI_CONFIG,
+  makeRng,
+  canEat,
+  inEatRange,
+  resolveEat,
+  vsub,
+  vnorm,
+  vdot,
+  vdist,
+} from './behavior.js'
+
+// Population manager for AI fish. Keeps ~25-35 fish alive around the player,
+// spawns them at a safe distance with a size distribution relative to the
+// player, and resolves all eating interactions (AI vs AI, player vs AI,
+// AI vs player) each frame, emitting events for later systems to consume.
+//
+// The pure decision helpers (size rolls, spawn position picking, despawn test)
+// live at the bottom and are unit tested with an injectable RNG.
+
+export const SPAWN_CONFIG = {
+  targetPopulation: 30, // spawn up toward this count
+  maxPopulation: 35, // never exceed this
+  minPopulation: 25, // informational floor
+  spawnInterval: 1.2, // seconds between spawn attempts
+  minSpawnDist: 40, // never spawn closer than this to the player (XZ)
+  maxSpawnDist: 150, // outer spawn ring
+  despawnDist: 260, // recycle fish beyond this from the player (XZ)
+  // Size distribution relative to the player.
+  smallerPct: 0.6, // 60% smaller
+  similarPct: 0.25, // 25% similar (=> 15% bigger)
+  smallerRange: [0.4, 0.8], // multipliers of player size
+  similarRange: [0.9, 1.15],
+  biggerRange: [1.25, 2.0],
+}
+
+// A pleasant spread of tropical fish colours.
+const FISH_COLORS = [
+  0xff8c42, 0xffd23f, 0xf25f5c, 0x4fd1ff, 0x8ce99a, 0xb197fc, 0xffa8d6,
+  0xffe066, 0x63e6be, 0xff6b6b, 0x74c0fc, 0xffd8a8,
+]
+
+export class Spawner {
+  /**
+   * @param {{
+   *   scene: import('three').Scene,
+   *   player: { position:{x:number,y:number,z:number}, size:number, yaw:number, pitch:number, bite:boolean, fish?:any },
+   *   events?: { emit:(name:string, payload?:any) => void },
+   *   rng?: () => number,
+   *   config?: typeof SPAWN_CONFIG,
+   *   aiConfig?: typeof AI_CONFIG,
+   *   bounds?: typeof WORLD,
+   * }} options
+   */
+  constructor(options = {}) {
+    this.scene = options.scene
+    this.player = options.player
+    this.events = options.events ?? { emit() {} }
+    this.rng = options.rng ?? makeRng((Math.random() * 0xffffffff) >>> 0)
+    this.config = options.config ?? SPAWN_CONFIG
+    this.aiConfig = options.aiConfig ?? AI_CONFIG
+    this.bounds = options.bounds ?? WORLD
+
+    /** @type {AIFish[]} */
+    this.fish = []
+    this._timer = 0
+    this._prevBite = false
+
+    // Reusable scratch descriptor list to keep per-frame allocation reasonable.
+    this._descriptors = []
+  }
+
+  /** Current live population. */
+  get population() {
+    return this.fish.length
+  }
+
+  /** Pre-fill the world so the player isn't alone on the first frame. */
+  seed(count = this.config.targetPopulation) {
+    for (let i = 0; i < count; i++) this.spawnOne()
+  }
+
+  /** Spawn a single fish (respecting the max population cap). */
+  spawnOne() {
+    if (this.fish.length >= this.config.maxPopulation) return null
+    const size = rollSize(this.player.size, this.rng, this.config)
+    const position = pickSpawnPosition(this.player.position, this.rng, this.config, this.bounds)
+    const color = FISH_COLORS[Math.floor(this.rng() * FISH_COLORS.length)]
+    const fish = new AIFish({
+      position,
+      size,
+      color,
+      rng: makeRng((this.rng() * 0xffffffff) >>> 0),
+      config: this.aiConfig,
+    })
+    this.fish.push(fish)
+    if (this.scene) this.scene.add(fish.object3d)
+    this.events.emit('fish-spawned', { id: fish.id, size })
+    return fish
+  }
+
+  /** Remove a fish by index, freeing its resources and detaching it. */
+  _removeAt(index) {
+    const fish = this.fish[index]
+    if (!fish) return
+    if (this.scene) this.scene.remove(fish.object3d)
+    fish.dispose()
+    fish.alive = false
+    this.fish.splice(index, 1)
+  }
+
+  /**
+   * Advance the whole population one frame: spawn timing, per-fish AI update,
+   * despawn of far-away fish, and all eating resolution.
+   * @param {number} dt seconds
+   */
+  update(dt) {
+    // --- Spawn over time when population drops.
+    this._timer += dt
+    if (this._timer >= this.config.spawnInterval) {
+      this._timer = 0
+      if (this.fish.length < this.config.targetPopulation) this.spawnOne()
+    }
+
+    // --- Build a descriptor list once, including the player.
+    const descriptors = this._descriptors
+    descriptors.length = 0
+    for (const f of this.fish) descriptors.push(f)
+    descriptors.push(this.player)
+
+    // --- Update each fish against everyone else.
+    for (const f of this.fish) {
+      f.update(dt, descriptors)
+    }
+
+    // --- Despawn / recycle fish that drift too far from the player.
+    for (let i = this.fish.length - 1; i >= 0; i--) {
+      if (shouldDespawn(this.fish[i].position, this.player.position, this.config)) {
+        this.events.emit('fish-despawned', { id: this.fish[i].id })
+        this._removeAt(i)
+      }
+    }
+
+    this._resolveEating()
+  }
+
+  /** Resolve every eat interaction for the frame. */
+  _resolveEating() {
+    const player = this.player
+    const ai = this.fish
+
+    // --- AI vs AI: bigger eats smaller on contact. An eater swallows at most
+    // one target per frame, which keeps splice bookkeeping simple and fair.
+    for (const eater of ai) {
+      if (!eater.alive) continue
+      for (const target of ai) {
+        if (target === eater || !target.alive) continue
+        if (canEat(eater, target, this.aiConfig) && inEatRange(eater, target, this.aiConfig)) {
+          const { newSize } = resolveEat(eater, target, this.aiConfig)
+          eater.setSize(newSize)
+          this.events.emit('fish-eaten', {
+            eaterId: eater.id,
+            targetId: target.id,
+            targetSize: target.size,
+          })
+          const targetIndex = this.fish.indexOf(target)
+          if (targetIndex !== -1) this._removeAt(targetIndex)
+          break
+        }
+      }
+    }
+
+    // --- AI vs player: a threat that reaches the player bites it.
+    for (const eater of ai) {
+      if (!eater.alive) continue
+      if (canEat(eater, player, this.aiConfig) && inEatRange(eater, player, this.aiConfig)) {
+        const damage = Math.round(eater.size * 5)
+        this.events.emit('player-bitten', { attackerId: eater.id, damage })
+      }
+    }
+
+    // --- Player vs AI: on bite press, eat a prey-sized fish in front.
+    const biteEdge = player.bite && !this._prevBite
+    this._prevBite = !!player.bite
+    if (biteEdge) this._playerBite()
+  }
+
+  /** Handle a single player bite (rising edge). */
+  _playerBite() {
+    const player = this.player
+    const heading = headingToDirection(player.yaw, player.pitch)
+    let bestPrey = null
+    let bestTooBig = null
+    let bestDist = Infinity
+
+    for (const fish of this.fish) {
+      if (!fish.alive) continue
+      const dist = vdist(player.position, fish.position)
+      if (dist > (this.aiConfig.eatRangeBase * player.size)) continue
+      // Must be roughly in front of the player.
+      const toFish = vnorm(vsub(fish.position, player.position))
+      if (vdot(toFish, heading) < 0.3) continue
+      if (canEat(player, fish, this.aiConfig)) {
+        if (dist < bestDist) {
+          bestDist = dist
+          bestPrey = fish
+        }
+      } else {
+        bestTooBig = fish
+      }
+    }
+
+    if (bestPrey) {
+      const { newSize } = resolveEat(player, bestPrey, this.aiConfig)
+      player.size = newSize
+      if (player.fish && player.fish.setSize) player.fish.setSize(newSize)
+      this.events.emit('player-ate', { targetId: bestPrey.id, targetSize: bestPrey.size })
+      const idx = this.fish.indexOf(bestPrey)
+      if (idx !== -1) this._removeAt(idx)
+    } else if (bestTooBig) {
+      this.events.emit('bite-missed', { targetId: bestTooBig.id })
+    } else {
+      this.events.emit('bite-missed', { targetId: null })
+    }
+  }
+
+  /** Tear down all fish. */
+  dispose() {
+    for (const f of this.fish) {
+      if (this.scene) this.scene.remove(f.object3d)
+      f.dispose()
+    }
+    this.fish.length = 0
+  }
+}
+
+// --- Pure decision helpers (unit tested) ----------------------------------
+
+/**
+ * Roll a size category using the configured distribution.
+ * @param {() => number} rng
+ * @param {typeof SPAWN_CONFIG} [config]
+ * @returns {'smaller'|'similar'|'bigger'}
+ */
+export function rollSizeCategory(rng, config = SPAWN_CONFIG) {
+  const r = rng()
+  if (r < config.smallerPct) return 'smaller'
+  if (r < config.smallerPct + config.similarPct) return 'similar'
+  return 'bigger'
+}
+
+/**
+ * Roll a concrete fish size relative to the player, respecting the max cap.
+ * @param {number} playerSize
+ * @param {() => number} rng
+ * @param {typeof SPAWN_CONFIG} [config]
+ * @param {number} [maxSize] hard cap on absolute size
+ * @returns {number}
+ */
+export function rollSize(playerSize, rng, config = SPAWN_CONFIG, maxSize = AI_CONFIG.maxSize) {
+  const category = rollSizeCategory(rng, config)
+  const range =
+    category === 'smaller'
+      ? config.smallerRange
+      : category === 'similar'
+        ? config.similarRange
+        : config.biggerRange
+  const mult = range[0] + rng() * (range[1] - range[0])
+  const size = playerSize * mult
+  return Math.max(0.2, Math.min(maxSize, size))
+}
+
+/**
+ * Pick a spawn position at least minSpawnDist (XZ) from the player and inside
+ * the world bounds. Retries a few times, then falls back to a guaranteed-far
+ * ring position.
+ * @param {{x:number,y:number,z:number}} playerPos
+ * @param {() => number} rng
+ * @param {typeof SPAWN_CONFIG} [config]
+ * @param {typeof WORLD} [bounds]
+ * @returns {{x:number,y:number,z:number}}
+ */
+export function pickSpawnPosition(playerPos, rng, config = SPAWN_CONFIG, bounds = WORLD) {
+  const minY = bounds.seafloorY + bounds.fishFloorMargin
+  const maxY = bounds.surfaceY - bounds.fishSurfaceMargin
+
+  for (let attempt = 0; attempt < 24; attempt++) {
+    const ang = rng() * Math.PI * 2
+    const r = config.minSpawnDist + rng() * (config.maxSpawnDist - config.minSpawnDist)
+    const x = playerPos.x + Math.cos(ang) * r
+    const z = playerPos.z + Math.sin(ang) * r
+    const y = minY + rng() * (maxY - minY)
+    const p = clampToBounds({ x, y, z }, bounds)
+    const dist = Math.hypot(p.x - playerPos.x, p.z - playerPos.z)
+    if (dist >= config.minSpawnDist) return p
+  }
+
+  // Fallback: place exactly on the min-distance ring, aimed back toward the
+  // origin so it stays inside the world radius even near the edge.
+  const towardOrigin = Math.atan2(-playerPos.z, -playerPos.x)
+  const x = playerPos.x + Math.cos(towardOrigin) * config.minSpawnDist
+  const z = playerPos.z + Math.sin(towardOrigin) * config.minSpawnDist
+  const y = (minY + maxY) / 2
+  return clampToBounds({ x, y, z }, bounds)
+}
+
+/**
+ * Whether a fish should be recycled because it wandered too far (XZ) from the
+ * player.
+ * @param {{x:number,y:number,z:number}} fishPos
+ * @param {{x:number,y:number,z:number}} playerPos
+ * @param {typeof SPAWN_CONFIG} [config]
+ * @returns {boolean}
+ */
+export function shouldDespawn(fishPos, playerPos, config = SPAWN_CONFIG) {
+  return Math.hypot(fishPos.x - playerPos.x, fishPos.z - playerPos.z) > config.despawnDist
+}
+
+export default Spawner
