@@ -4,6 +4,21 @@ A third-person 3D fish survival game built with React, Three.js and Vite.
 
 **Play:** https://mantas6.github.io/fishea/
 
+## Survival
+
+Eat smaller fish to grow and stay fed; avoid bigger fish that bite. The HUD
+(top-left) tracks three stats:
+
+- **Health** — drops when a bigger fish bites you or when you starve;
+  regenerates slowly while well fed.
+- **Hunger** — drains over time. Eat prey to top it back up; hitting empty
+  starts draining health.
+- **Stamina** — spent while sprinting and refilled while cruising. Empty it and
+  you're locked out of sprinting until it recovers.
+
+Get eaten or starve and a game-over screen appears — hit **Swim again** (or
+press **Enter**) to restart with a fresh ocean.
+
 ## Controls
 
 A connected controller takes priority automatically whenever it's in use;

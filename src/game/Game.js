@@ -5,9 +5,18 @@ import { computeCameraTarget, dampVector, CAMERA_DEFAULTS } from './camera.js'
 import { InputManager } from './input/index.js'
 import { EventEmitter } from './events.js'
 import { Spawner } from './ai/spawner.js'
+import { createStats, tickStats, eat, damage, sprintAllowed } from './stats.js'
 
 // Owns the Three.js renderer, scene, camera, clock, and the RAF loop.
 // All WebGL/DOM work lives here so the pure modules stay test-friendly.
+
+// Neutral input used to freeze the player after death (drifts to a stop).
+const FROZEN_INPUT = {
+  move: { x: 0, y: 0, z: 0 },
+  look: { x: 0, y: 0 },
+  sprint: false,
+  bite: false,
+}
 
 export class Game {
   /**
@@ -35,13 +44,38 @@ export class Game {
 
     // World + player.
     this.world = createWorld(this.scene)
-    this.player = new Player({ size: 1.6 })
+    this._initialPlayerSize = 1.6
+    this.player = new Player({ size: this._initialPlayerSize })
     this.scene.add(this.player.object3d)
 
-    // Gameplay event bus. Later systems (stats HUD, audio) subscribe here.
+    // Gameplay event bus. Systems (stats HUD, audio) subscribe here.
     // Emitted events: 'fish-spawned', 'fish-despawned', 'fish-eaten',
-    // 'player-ate', 'player-bitten', 'bite-missed'.
+    // 'player-ate', 'player-bitten', 'bite-missed', 'player-died', 'hud'.
     this.events = new EventEmitter()
+
+    // Survival stats (pure model in stats.js). `alive` mirrors stats.alive so
+    // the loop can freeze player control on death without re-deriving it.
+    this.stats = createStats()
+    this.alive = true
+
+    // HUD is refreshed on a throttle (~10Hz) rather than every frame.
+    this._hudTimer = 0
+    this._hudInterval = 0.1
+    this._activeSource = 'keyboard-mouse'
+
+    // Wire stats reactions to gameplay events; keep unsubscribers for dispose.
+    this._unsubs = [
+      this.events.on('player-ate', ({ targetSize }) => {
+        if (!this.alive) return
+        this.stats = eat(this.stats, targetSize)
+      }),
+      this.events.on('player-bitten', ({ damage: amount }) => {
+        if (!this.alive) return
+        const { stats, dead } = damage(this.stats, amount)
+        this.stats = stats
+        if (dead) this._handleDeath('eaten')
+      }),
+    ]
 
     // AI fish population + eating mechanics.
     this.spawner = new Spawner({
@@ -89,13 +123,90 @@ export class Game {
     const dt = Math.min(this.clock.getDelta(), 0.1) // clamp big frame gaps
 
     const input = this.input.update(dt)
-    this.player.applyInput(input, dt)
+    this._activeSource = input.activeSource
+
+    const sprintOk = sprintAllowed(this.stats)
+    if (this.alive) {
+      this.player.applyInput(input, dt, sprintOk)
+    } else {
+      // Frozen on death: bleed off velocity but ignore steering/thrust.
+      this.player.applyInput(FROZEN_INPUT, dt, false)
+    }
+
+    // Sprinting only counts (and drains stamina) when actually moving fast.
+    const sprinting = this.alive && this.player.sprinting && this.player.currentSpeed > 0.5
+    const wasAlive = this.alive
+    this.stats = tickStats(this.stats, dt, { sprinting })
+    if (wasAlive && !this.stats.alive) this._handleDeath('starved')
+
     this.spawner.update(dt)
     this.world.update(dt)
     this._updateCamera(dt)
 
+    // Throttled HUD refresh.
+    this._hudTimer += dt
+    if (this._hudTimer >= this._hudInterval) {
+      this._hudTimer = 0
+      this._emitHud()
+    }
+
     this.renderer.render(this.scene, this.camera)
     this._rafId = requestAnimationFrame(this._loop)
+  }
+
+  /** Build and emit a HUD snapshot (also invokes onHudUpdate if set). */
+  _emitHud() {
+    const s = this.stats
+    const snapshot = {
+      hp: s.hp,
+      hpMax: s.hpMax,
+      hunger: s.hunger,
+      hungerMax: s.hungerMax,
+      stamina: s.stamina,
+      staminaMax: s.staminaMax,
+      exhausted: s.exhausted,
+      size: this.player.size,
+      activeSource: this._activeSource,
+      alive: this.alive,
+    }
+    if (typeof this.onHudUpdate === 'function') this.onHudUpdate(snapshot)
+    this.events.emit('hud', snapshot)
+  }
+
+  /** Transition to the dead state exactly once and announce the cause. */
+  _handleDeath(cause) {
+    if (!this.alive) return
+    this.alive = false
+    this.events.emit('player-died', { cause })
+    this._emitHud()
+  }
+
+  /**
+   * Reset stats, the player, and the fish population for a fresh run.
+   * Safe to call at any time (whether alive or dead).
+   */
+  restart() {
+    this.stats = createStats()
+    this.alive = true
+
+    // Reset player gameplay + visual state.
+    this.player.position = { x: 0, y: 20, z: 0 }
+    this.player.velocity = { x: 0, y: 0, z: 0 }
+    this.player.yaw = 0
+    this.player.pitch = 0
+    this.player.size = this._initialPlayerSize
+    if (this.player.fish && this.player.fish.setSize) {
+      this.player.fish.setSize(this._initialPlayerSize)
+    }
+    this.player._syncTransform()
+
+    // Rebuild the fish population from scratch.
+    this.spawner.dispose()
+    this.spawner.seed()
+
+    this._hudTimer = 0
+    this.events.emit('player-respawned')
+    this._emitHud()
   }
 
   _updateCamera(dt) {
@@ -123,6 +234,9 @@ export class Game {
   dispose() {
     this.stop()
     window.removeEventListener('resize', this._onResize)
+
+    for (const unsub of this._unsubs) unsub()
+    this._unsubs.length = 0
 
     this.input.dispose()
     this.spawner.dispose()
